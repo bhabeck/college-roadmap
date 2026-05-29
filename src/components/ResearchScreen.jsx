@@ -17,46 +17,97 @@ const DEMO_FLOW = [
     delay: 1500, role: "ai",
     text: "Here's where I'd start — Grand Canyon University. Strongest institutional Christian culture I'd recommend, elite 2x national champion club lacrosse, and an organized outdoor rec program with the Grand Canyon, Sedona, and Flagstaff skiing on the calendar.",
     card: {
-      name: "Grand Canyon University",
-      location: "Phoenix, AZ · Sonoran Desert",
-      lacrosse: "Club MCLA — 2x Nat'l Champs",
-      laxType: "club",
-      net: "~$22K/yr",
-      size: "~25,000",
-      ratings: { Activities: 4, Religion: 5, Athletics: 4, Academics: 3 },
-      bottomLine: "Strongest Christian culture on the list. Elite club lacrosse. Grand Canyon and Sedona on the outdoor rec calendar.",
-      tier: "tier1",
-    },
+        name: "Grand Canyon University",
+        location: "Phoenix, AZ · Sonoran Desert",
+        lacrosse: "Club MCLA — 2x Nat'l Champs",
+        laxType: "club",
+        net: "~$22K/yr",
+        size: "~25,000",
+        enrollment: "~25,000",
+        acceptance: "79%",
+        drive: "Flight",
+        website: "gcu.edu",
+        index: 0,
+        ratings: { Activities: 4, Religion: 5, Athletics: 4, Academics: 3 },
+        pros: [
+          "Strongest institutional Christian culture on the list",
+          "2x MCLA National Champions — elite club lacrosse",
+          "Organized outdoor rec: Grand Canyon, Sedona, Flagstaff skiing",
+          "Most affordable private Christian school (~$22K net)",
+        ],
+        cons: [
+          "25,000 students — very large campus feel",
+          "Phoenix is flat — outdoor culture requires leaving campus",
+          "Club lacrosse only — no varsity pathway",
+          "Flight required from Atlanta",
+        ],
+        bottomLine: "Strongest Christian culture and elite club lacrosse. The organized outdoor rec program means Asher actually gets to the Grand Canyon and Sedona regularly. Size is the main trade-off.",
+        tier: "tier1",
+      }
   },
   {
     delay: 400, role: "ai",
     text: "Appalachian State is the other top pick — best raw outdoor setting close to home. Boone at 3,300 feet. Cru, RUF, and Campus Christian Fellowship all active on campus.",
     card: {
-      name: "Appalachian State",
-      location: "Boone, NC · Blue Ridge at 3,300 ft",
-      lacrosse: "Club MCLA est. 1970s",
-      laxType: "club",
-      net: "~$43K OOS",
-      size: "~19,000",
-      ratings: { Activities: 5, Religion: 3, Athletics: 3, Academics: 3 },
-      bottomLine: "Best mountain setting close to home. Robust campus ministry. Only 2.5 hrs from Atlanta.",
-      tier: "tier1",
-    },
+        name: "Appalachian State",
+        location: "Boone, NC · Blue Ridge at 3,300 ft",
+        lacrosse: "Club MCLA est. 1970s",
+        laxType: "club",
+        net: "~$43K OOS",
+        size: "~19,000",
+        enrollment: "~19,000",
+        acceptance: "90%",
+        drive: "~2.5 hrs ✓",
+        website: "appstate.edu",
+        index: 1,
+        ratings: { Activities: 5, Religion: 3, Athletics: 3, Academics: 3 },
+        pros: [
+          "Best mountain outdoor setting close to home — Boone at 3,300 ft",
+          "Cru, RUF, and Campus Christian Fellowship all active on campus",
+          "Established club lacrosse since the 1970s",
+          "Only 2.5 hours from Cumming — easy visits",
+        ],
+        cons: [
+          "No institutional Christian identity — public university, faith is self-driven",
+          "19,000 students — large campus, easy to get lost",
+          "Club lacrosse only — no varsity pathway or scholarship",
+          "Out-of-state cost (~$43K) comparable to private schools",
+        ],
+        bottomLine: "Best mountain outdoor setting close to home. Christian ministry scene is genuinely robust even without institutional identity — Cru and RUF are both active. Size and public school feel are the real trade-offs.",
+        tier: "tier1",
+      }
   },
   {
     delay: 400, role: "ai",
     text: "And for lacrosse specifically — University of Lynchburg has the best D3 program of any Christian school I've found. 2015 national runner-up, players from Alpharetta and Roswell on the current roster.",
     card: {
-      name: "University of Lynchburg",
-      location: "Lynchburg, VA · Blue Ridge Mountains",
-      lacrosse: "D3 Varsity — Best Program ★",
-      laxType: "d3",
-      net: "~$23K/yr",
-      size: "~1,800",
-      ratings: { Activities: 4, Religion: 4, Athletics: 5, Academics: 3 },
-      bottomLine: "Best D3 lacrosse on the list. Most affordable private school. Players from Alpharetta already on the roster.",
-      tier: "tier2",
-    },
+        name: "University of Lynchburg",
+        location: "Lynchburg, VA · Blue Ridge Mountains",
+        lacrosse: "D3 Varsity — Best Program ★",
+        laxType: "d3",
+        net: "~$23K/yr",
+        size: "~1,800",
+        enrollment: "~1,800",
+        acceptance: "82%",
+        drive: "~6 hrs",
+        website: "lynchburg.edu",
+        index: 2,
+        ratings: { Activities: 4, Religion: 4, Athletics: 5, Academics: 3 },
+        pros: [
+          "Best D3 lacrosse program on the list — 2015 national runner-up",
+          "Players from Alpharetta and Roswell already on the roster",
+          "Most affordable private school on the list (~$23K net)",
+          "Blue Ridge Mountains setting with real outdoor access",
+        ],
+        cons: [
+          "6-hour drive from Cumming — harder to visit, far from home",
+          "Christian culture solid but not as intentional as GCU or Westmont",
+          "Lynchburg itself is a smaller city — less energy than Boone or Asheville",
+          "Academics rated lower than some peers on the list",
+        ],
+        bottomLine: "Best lacrosse program on the list by a wide margin. Blue Ridge setting, most affordable net price, and players from Alpharetta already on the roster make this an easy first outreach for Asher.",
+        tier: "tier2",
+      }
   },
 ];
 
@@ -234,51 +285,108 @@ export default function ResearchScreen({ pillars }) {
 }
 
 function SchoolCard({ card }) {
-  const ratingColors = {
-    Activities: "#4ade80",
-    Religion:   "#60a5fa",
-    Athletics:  "#fbbf24",
-    Academics:  "#a78bfa",
-  };
-
-  return (
-    <div style={sc.card}>
-      <div style={sc.top}>
-        <div>
-          <div style={sc.name}>{card.name}</div>
-          <div style={sc.loc}>{card.location}</div>
-        </div>
-        <span style={card.laxType === "d3" ? sc.laxD3 : sc.laxClub}>
-          {card.lacrosse}
-        </span>
-      </div>
-      <div style={sc.stats}>
-        <div style={sc.stat}>
-          <div style={sc.statLabel}>Est. Net/yr</div>
-          <div style={sc.statVal}>{card.net}</div>
-        </div>
-        <div style={{ ...sc.stat, borderRight: "none" }}>
-          <div style={sc.statLabel}>Size</div>
-          <div style={sc.statVal}>{card.size}</div>
-        </div>
-      </div>
-      <div style={sc.ratings}>
-        {Object.entries(card.ratings).map(([label, val]) => (
-          <div key={label} style={sc.ratingRow}>
-            <span style={sc.ratingLabel}>{label}</span>
-            <div style={sc.track}>
-              <div style={{ ...sc.fill, width: `${val * 20}%`, background: ratingColors[label] || "#4ade80" }} />
+    const ratingColors = {
+      Activities: "#3b82f6",
+      Religion:   "#a78bfa",
+      Athletics:  "#fbbf24",
+      Academics:  "#34d399",
+    };
+  
+    return (
+      <div style={sc.card}>
+        {/* Header */}
+        <div style={sc.top}>
+          <div>
+            <div style={sc.num}>
+              {String(card.index + 1).padStart(2, "0")}
             </div>
-            <span style={sc.score}>{val}</span>
+            <div style={sc.name}>{card.name}</div>
+            <div style={sc.loc}>{card.location}</div>
           </div>
-        ))}
+          <span style={card.laxType === "d3" ? sc.laxD3 : sc.laxClub}>
+            {card.lacrosse}
+          </span>
+        </div>
+  
+        {/* Stats strip */}
+        <div style={sc.statsStrip}>
+          <div style={sc.stat}>
+            <div style={sc.statLbl}>Enrollment</div>
+            <div style={sc.statVal}>{card.enrollment || card.size}</div>
+          </div>
+          <div style={sc.stat}>
+            <div style={sc.statLbl}>Est. Net/yr</div>
+            <div style={sc.statVal}>{card.net}</div>
+          </div>
+          <div style={sc.stat}>
+            <div style={sc.statLbl}>Acceptance</div>
+            <div style={sc.statVal}>{card.acceptance || "—"}</div>
+          </div>
+          <div style={{ ...sc.stat, borderRight: "none" }}>
+            <div style={sc.statLbl}>Drive from ATL</div>
+            <div style={sc.statVal}>{card.drive || "—"}</div>
+          </div>
+        </div>
+  
+        {/* Ratings + Pros/Cons */}
+        <div style={sc.body}>
+          {/* Ratings */}
+          <div style={sc.ratingsCol}>
+            {Object.entries(card.ratings).map(([label, val]) => (
+              <div key={label} style={sc.ratingRow}>
+                <span style={sc.ratingLabel}>{label}</span>
+                <div style={sc.track}>
+                  <div style={{
+                    ...sc.fill,
+                    width: `${val * 20}%`,
+                    background: ratingColors[label] || "#3b82f6"
+                  }} />
+                </div>
+                <span style={sc.score}>{val}</span>
+              </div>
+            ))}
+          </div>
+  
+          {/* Pros */}
+          <div style={sc.prosCol}>
+            <div style={sc.pcLabel}>✓ PROS</div>
+            {(card.pros || []).map((p, i) => (
+              <div key={i} style={sc.pcItem}>
+                <span style={sc.prosDot}>•</span>
+                <span>{p}</span>
+              </div>
+            ))}
+          </div>
+  
+          {/* Cons */}
+          <div style={sc.consCol}>
+            <div style={{ ...sc.pcLabel, color: "#f87171" }}>✗ CONS</div>
+            {(card.cons || []).map((c, i) => (
+              <div key={i} style={sc.pcItem}>
+                <span style={sc.consDot}>•</span>
+                <span>{c}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+  
+        {/* Bottom line */}
+        <div style={sc.bottomLine}>
+          <strong style={{ color: "#e8edf5", fontWeight: 500 }}>Bottom line:</strong>{" "}
+          {card.bottomLine}
+        </div>
+  
+        {/* Footer link */}
+        {card.website && (
+          <div style={sc.footer}>
+            <a href={`https://${card.website}`} target="_blank" rel="noreferrer" style={sc.link}>
+              {card.website}
+            </a>
+          </div>
+        )}
       </div>
-      <div style={sc.bottomLine}>
-        <strong>Bottom line:</strong> {card.bottomLine}
-      </div>
-    </div>
-  );
-}
+    );
+  }
 
 function TypingDots() {
   return (
@@ -339,21 +447,31 @@ const s = {
   };
   
   const sc = {
-    card:        { background: "#1c2333", border: "0.5px solid #2a3347", borderRadius: 12, marginBottom: 10, overflow: "hidden", boxShadow: "0 2px 14px rgba(0,0,0,0.25)" },
-    top:         { padding: "12px 14px 10px", background: "#222b3d", borderBottom: "0.5px solid #2a3347", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 },
-    name:        { fontSize: 14, fontWeight: 500, color: "#e8edf5" },
-    loc:         { fontSize: 11, color: "#7d8fa8", marginTop: 2 },
-    laxD3:       { fontSize: 10, fontWeight: 500, padding: "3px 8px", borderRadius: 6, whiteSpace: "nowrap", flexShrink: 0, background: "rgba(59,130,246,0.15)", border: "0.5px solid #1e3a6e", color: "#93c5fd" },
-    laxClub:     { fontSize: 10, fontWeight: 500, padding: "3px 8px", borderRadius: 6, whiteSpace: "nowrap", flexShrink: 0, background: "rgba(245,158,11,0.12)", border: "0.5px solid rgba(245,158,11,0.25)", color: "#fcd34d" },
-    stats:       { display: "grid", gridTemplateColumns: "1fr 1fr", borderBottom: "0.5px solid #2a3347" },
-    stat:        { padding: "8px 13px", borderRight: "0.5px solid #2a3347" },
-    statLabel:   { fontSize: 9, fontWeight: 500, textTransform: "uppercase", letterSpacing: 0.5, color: "#4a5a78", marginBottom: 3 },
-    statVal:     { fontSize: 12, fontWeight: 500, color: "#e8edf5" },
-    ratings:     { padding: "11px 13px 9px" },
-    ratingRow:   { display: "flex", alignItems: "center", gap: 7, marginBottom: 6 },
-    ratingLabel: { fontSize: 11, color: "#7d8fa8", width: 68, flexShrink: 0 },
-    track:       { flex: 1, height: 4, background: "#4a5a78", borderRadius: 999, overflow: "hidden" },
+    card:        { background: "#1c2333", border: "0.5px solid #2a3347", borderRadius: 12, marginBottom: 14, overflow: "hidden", boxShadow: "0 2px 14px rgba(0,0,0,0.25)" },
+    top:         { padding: "14px 16px 12px", background: "#222b3d", borderBottom: "0.5px solid #2a3347", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 },
+    num:         { fontSize: 10, fontWeight: 600, color: "#4a5a78", letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 },
+    name:        { fontSize: 16, fontWeight: 500, color: "#e8edf5", marginBottom: 3 },
+    loc:         { fontSize: 11, color: "#7d8fa8" },
+    laxD3:       { fontSize: 10, fontWeight: 500, padding: "3px 9px", borderRadius: 6, whiteSpace: "nowrap", flexShrink: 0, background: "rgba(59,130,246,0.15)", border: "0.5px solid #1e3a6e", color: "#93c5fd" },
+    laxClub:     { fontSize: 10, fontWeight: 500, padding: "3px 9px", borderRadius: 6, whiteSpace: "nowrap", flexShrink: 0, background: "rgba(245,158,11,0.12)", border: "0.5px solid rgba(245,158,11,0.25)", color: "#fcd34d" },
+    statsStrip:  { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", borderBottom: "0.5px solid #2a3347" },
+    stat:        { padding: "9px 14px", borderRight: "0.5px solid #2a3347" },
+    statLbl:     { fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, color: "#4a5a78", marginBottom: 3 },
+    statVal:     { fontSize: 13, fontWeight: 500, color: "#e8edf5" },
+    body:        { display: "flex", borderBottom: "0.5px solid #2a3347" },
+    ratingsCol:  { width: 180, flexShrink: 0, padding: "12px 14px", borderRight: "0.5px solid #2a3347" },
+    ratingRow:   { display: "flex", alignItems: "center", gap: 7, marginBottom: 7 },
+    ratingLabel: { fontSize: 11, color: "#7d8fa8", width: 64, flexShrink: 0 },
+    track:       { flex: 1, height: 4, background: "#3d4f6a", borderRadius: 999, overflow: "hidden" },
     fill:        { height: "100%", borderRadius: 999 },
     score:       { fontSize: 11, fontWeight: 500, color: "#e8edf5", width: 14, textAlign: "right" },
-    bottomLine:  { padding: "9px 13px 12px", borderTop: "0.5px solid #2a3347", background: "#252d3d", fontSize: 11, color: "#7d8fa8", lineHeight: 1.6 },
+    prosCol:     { flex: 1, padding: "12px 14px", borderRight: "0.5px solid #2a3347", minWidth: 0 },
+    consCol:     { flex: 1, padding: "12px 14px", minWidth: 0 },
+    pcLabel:     { fontSize: 10, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", color: "#34d399", marginBottom: 8 },
+    pcItem:      { display: "flex", alignItems: "flex-start", gap: 6, fontSize: 11, color: "#7d8fa8", lineHeight: 1.5, marginBottom: 6 },
+    prosDot:     { color: "#34d399", flexShrink: 0, marginTop: 1 },
+    consDot:     { color: "#f87171", flexShrink: 0, marginTop: 1 },
+    bottomLine:  { padding: "10px 14px 12px", background: "#252d3d", fontSize: 12, color: "#7d8fa8", lineHeight: 1.6 },
+    footer:      { padding: "8px 14px", background: "#1c2333", borderTop: "0.5px solid #2a3347" },
+    link:        { fontSize: 11, color: "#3b82f6", textDecoration: "none", fontStyle: "italic" },
   };
