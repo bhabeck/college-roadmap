@@ -163,7 +163,7 @@ const s = {
   h1:           { fontSize: 24, fontWeight: 500, color: "#e8edf5", letterSpacing: "-0.5px", lineHeight: 1.2, marginBottom: 8 },
   sub:          { fontSize: 13, color: "#8896b0", lineHeight: 1.65, marginBottom: 28 },
   sectionLabel: { fontSize: 11, fontWeight: 500, letterSpacing: 0.5, textTransform: "uppercase", color: "#4a5a78", marginBottom: 8 },
-  pillars:      { display: "flex", flexDirection: "column", gap: 5, marginBottom: 28 },
+  pillars:      { display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8, marginBottom: 28 },
   pillar:       { display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "#1c2333", border: "0.5px solid #2a3347", borderRadius: 8, cursor: "pointer", userSelect: "none" },
   pillarSel:    { display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "#0f1e3d", border: "0.5px solid #1e3a6e", borderRadius: 8, cursor: "pointer", userSelect: "none" },
   pillarIcon:   { width: 28, height: 28, borderRadius: 7, background: "#222b3d", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
