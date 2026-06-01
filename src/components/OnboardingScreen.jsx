@@ -16,6 +16,7 @@ const PILLARS = [
 export default function OnboardingScreen({ onStart }) {
   const [selected, setSelected] = useState(["activities", "religion", "athletics", "academics"]);
   const [ranked, setRanked] = useState(["activities", "religion", "athletics", "academics"]);
+  const [extraCriteria, setExtraCriteria] = useState("");
 
   function togglePillar(id) {
     if (selected.includes(id)) {
@@ -57,7 +58,7 @@ export default function OnboardingScreen({ onStart }) {
         <div style={s.body}>
           <div style={s.eyebrow}>College Search 2028</div>
           <h1 style={s.h1}>Let's find the right fit.</h1>
-          <p style={s.sub}>Select what matters most, then rank them in order of importance. This shapes everything about how we search.</p>
+          <p style={s.sub}>Select what matters most, rank them in order, then tell us anything else.</p>
 
           <div style={s.sectionLabel}>What matters to you</div>
           <div style={s.pillars}>
@@ -73,9 +74,7 @@ export default function OnboardingScreen({ onStart }) {
                 <span style={selected.includes(p.id) ? s.pillarLabelSel : s.pillarLabel}>
                   {p.label}
                 </span>
-                {selected.includes(p.id) && (
-                  <span style={s.checkmark}>✓</span>
-                )}
+                {selected.includes(p.id) && <span style={s.checkmark}>✓</span>}
               </div>
             ))}
           </div>
@@ -91,25 +90,27 @@ export default function OnboardingScreen({ onStart }) {
                   <span style={{ fontSize: 16 }}>{p.icon}</span>
                   <span style={s.rankLabel}>{p.label}</span>
                   <div style={s.udBtns}>
-                    <button
-                      style={{ ...s.udBtn, opacity: i === 0 ? 0.2 : 1 }}
-                      onClick={() => moveUp(id)}
-                      disabled={i === 0}
-                    >▲</button>
-                    <button
-                      style={{ ...s.udBtn, opacity: i === ranked.length - 1 ? 0.2 : 1 }}
-                      onClick={() => moveDown(id)}
-                      disabled={i === ranked.length - 1}
-                    >▼</button>
+                    <button style={{ ...s.udBtn, opacity: i === 0 ? 0.2 : 1 }} onClick={() => moveUp(id)} disabled={i === 0}>▲</button>
+                    <button style={{ ...s.udBtn, opacity: i === ranked.length - 1 ? 0.2 : 1 }} onClick={() => moveDown(id)} disabled={i === ranked.length - 1}>▼</button>
                   </div>
                 </div>
               );
             })}
           </div>
 
+          <div style={s.sectionLabel}>Anything else?</div>
+          <p style={s.rankHint}>Add any must-haves, deal-breakers, or things that matter that aren't on the list above.</p>
+          <textarea
+            style={s.textarea}
+            value={extraCriteria}
+            onChange={(e) => setExtraCriteria(e.target.value)}
+            placeholder="e.g. I want a strong study abroad program, I need to be within 4 hours of home, I'm interested in ROTC..."
+            rows={3}
+          />
+
           <button
             style={s.cta}
-            onClick={() => onStart(ranked.map((id) => PILLARS.find((p) => p.id === id)))}
+            onClick={() => onStart(ranked.map((id) => PILLARS.find((p) => p.id === id)), extraCriteria.trim())}
           >
             Start searching →
           </button>
@@ -147,5 +148,6 @@ const s = {
   rankLabel:     { flex: 1, fontSize: 13, color: "#e8edf5" },
   udBtns:        { display: "flex", flexDirection: "column", gap: 3 },
   udBtn:         { width: 32, height: 24, background: "#222b3d", border: "0.5px solid #2a3347", borderRadius: 5, fontSize: 10, color: "#8896b0", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "inherit", padding: 0 },
+  textarea:      { width: "100%", background: "#1c2333", border: "0.5px solid #2a3347", borderRadius: 8, padding: "12px 13px", fontSize: 14, color: "#e8edf5", fontFamily: "inherit", outline: "none", resize: "none", lineHeight: 1.6, marginBottom: 24, boxSizing: "border-box" },
   cta:           { width: "100%", padding: "15px", background: "#3b82f6", color: "#fff", border: "none", borderRadius: 10, fontSize: 15, fontWeight: 500, cursor: "pointer", fontFamily: "inherit", letterSpacing: "-0.2px" },
 };

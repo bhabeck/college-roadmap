@@ -7,48 +7,46 @@ import ResearchScreen from './ResearchScreen'
 export default function ResearchApp() {
   const [screen, setScreen] = useState('onboarding')
   const [rankedPillars, setRankedPillars] = useState([])
+  const [extraCriteria, setExtraCriteria] = useState('')
   const [sessionId, setSessionId] = useState(null)
   const navigate = useNavigate()
 
-  // Resume existing session if one is stored locally
   useEffect(() => {
     const stored = localStorage.getItem('crSessionId')
     if (stored) {
-      // Verify the session still exists in Supabase
       supabase
         .from('sessions')
-        .select('id, pillars, cards, messages')
+        .select('id, pillars, cards, messages, extra_criteria')
         .eq('id', stored)
         .single()
         .then(({ data, error }) => {
           if (data && !error) {
             setSessionId(data.id)
             setRankedPillars(data.pillars || [])
+            setExtraCriteria(data.extra_criteria || '')
             setScreen('research')
           } else {
-            // Session not found — clear stale local reference
             localStorage.removeItem('crSessionId')
           }
         })
     }
   }, [])
 
-  async function handleStart(pillars) {
-    // Create a new session in Supabase
+  async function handleStart(pillars, extra) {
     const { data, error } = await supabase
       .from('sessions')
       .insert({
         pillars,
+        extra_criteria: extra || '',
         messages: [],
-        cards: { tier1: [], tier2: [], tier3: [] },
+        cards: { tier1: [], tier2: [], tier3: [], honorable: [] },
       })
       .select('id')
       .single()
 
     if (error || !data) {
-      console.error('Failed to create session:', error)
-      // Fall back to sessionless mode — app still works, just won't persist
       setRankedPillars(pillars)
+      setExtraCriteria(extra || '')
       setScreen('research')
       return
     }
@@ -56,6 +54,7 @@ export default function ResearchApp() {
     localStorage.setItem('crSessionId', data.id)
     setSessionId(data.id)
     setRankedPillars(pillars)
+    setExtraCriteria(extra || '')
     setScreen('research')
   }
 
@@ -63,15 +62,17 @@ export default function ResearchApp() {
     localStorage.removeItem('crSessionId')
     setSessionId(null)
     setRankedPillars([])
+    setExtraCriteria('')
     setScreen('onboarding')
   }
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {screen === 'onboarding' && <OnboardingScreen onStart={handleStart} />}
       {screen === 'research' && (
         <ResearchScreen
           pillars={rankedPillars}
+          extraCriteria={extraCriteria}
           sessionId={sessionId}
           onNewSearch={handleNewSearch}
         />
