@@ -13,11 +13,8 @@ function normalizeName(name) {
   return (name || "").toLowerCase().replace(/^the\s+/, "").replace(/\s+/g, " ").trim();
 }
 
-// ─── Supabase sync ───────────────────────────────────────────────────────────
-// Debounced so we're not hammering the DB on every keystroke or state tick.
 function useDebouncedSync(sessionId, messages, cards, delay = 800) {
   const timerRef = useRef(null);
-
   const sync = useCallback(() => {
     if (!sessionId) return;
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -31,13 +28,9 @@ function useDebouncedSync(sessionId, messages, cards, delay = 800) {
         });
     }, delay);
   }, [sessionId, messages, cards, delay]);
-
-  // Cleanup on unmount
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
-
   return sync;
 }
-// ─────────────────────────────────────────────────────────────────────────────
 
 export default function ResearchScreen({ pillars, sessionId, onNewSearch }) {
   const [activeTab, setActiveTab] = useState("research");
@@ -45,19 +38,16 @@ export default function ResearchScreen({ pillars, sessionId, onNewSearch }) {
   const [cards, setCards] = useState({ tier1: [], tier2: [], tier3: [] });
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [shareState, setShareState] = useState("idle"); // idle | copying | copied
+  const [shareState, setShareState] = useState("idle");
   const msgsRef = useRef(null);
   const historyRef = useRef([]);
   const startedRef = useRef(false);
 
-  // Sync to Supabase whenever messages or cards change
   const syncToSupabase = useDebouncedSync(sessionId, messages, cards);
   useEffect(() => { syncToSupabase(); }, [messages, cards]);
 
-  // Load existing session data on mount
   useEffect(() => {
     if (!sessionId || startedRef.current) return;
-
     supabase
       .from("sessions")
       .select("messages, cards, pillars")
@@ -65,21 +55,16 @@ export default function ResearchScreen({ pillars, sessionId, onNewSearch }) {
       .single()
       .then(({ data, error }) => {
         if (error || !data) {
-          // No existing data — start fresh
           startedRef.current = true;
           startConversation();
           return;
         }
-
         const existingMessages = data.messages || [];
         const existingCards = data.cards || { tier1: [], tier2: [], tier3: [] };
-
         const hasContent =
           existingMessages.length > 0 ||
           Object.values(existingCards).flat().length > 0;
-
         if (hasContent) {
-          // Resume existing session
           historyRef.current = existingMessages
             .filter((m) => m.role === "user" || m.role === "assistant")
             .map((m) => ({ role: m.role, content: m.text || m.content || "" }));
@@ -87,16 +72,14 @@ export default function ResearchScreen({ pillars, sessionId, onNewSearch }) {
           setCards(existingCards);
           startedRef.current = true;
         } else {
-          // Session exists but is empty — start fresh
           startedRef.current = true;
           startConversation();
         }
       });
   }, [sessionId]);
 
-  // Non-session start (fallback if Supabase unavailable)
   useEffect(() => {
-    if (sessionId) return; // handled above
+    if (sessionId) return;
     if (startedRef.current) return;
     startedRef.current = true;
     startConversation();
@@ -106,8 +89,6 @@ export default function ResearchScreen({ pillars, sessionId, onNewSearch }) {
     if (msgsRef.current) msgsRef.current.scrollTop = msgsRef.current.scrollHeight;
   }, [messages, loading]);
 
-  // ── Dedup: single source of truth ─────────────────────────────────────────
-  // All school names already on the list, normalized. Derived from cards state.
   function getSeenSchoolNames(currentCards) {
     const names = new Set();
     Object.values(currentCards).flat().forEach((c) => {
@@ -117,18 +98,11 @@ export default function ResearchScreen({ pillars, sessionId, onNewSearch }) {
   }
 
   function addMessage(role, text, card = null) {
-    setMessages((prevMsgs) => {
-      const newMsg = { role, text, card: card || null };
-      return [...prevMsgs, newMsg];
-    });
-
+    setMessages((prevMsgs) => [...prevMsgs, { role, text, card: card || null }]);
     if (card) {
       setCards((prevCards) => {
-        // Check dedup against current cards state — this is the only check we need
         const seen = getSeenSchoolNames(prevCards);
-        if (seen.has(normalizeName(card.name))) {
-          return prevCards; // duplicate — drop silently
-        }
+        if (seen.has(normalizeName(card.name))) return prevCards;
         const tier = card.tier || "tier2";
         const allExisting = Object.values(prevCards).flat();
         return {
@@ -139,19 +113,25 @@ export default function ResearchScreen({ pillars, sessionId, onNewSearch }) {
     }
   }
 
-  // ── Worker call ────────────────────────────────────────────────────────────
+  function handleRemoveCard(cardToRemove) {
+    setCards((prev) => {
+      const next = {};
+      for (const tier of Object.keys(prev)) {
+        next[tier] = prev[tier].filter((c) => c.name !== cardToRemove.name);
+      }
+      return next;
+    });
+  }
+
   async function callWorker(userMessage) {
     historyRef.current = [...historyRef.current, { role: "user", content: userMessage }];
     setLoading(true);
-
     try {
-      // Pull current cards for the worker's dedup list
       const currentCardNames = [];
       setCards((prev) => {
         Object.values(prev).flat().forEach((c) => { if (c?.name) currentCardNames.push(c.name); });
         return prev;
       });
-
       const res = await fetch(WORKER_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -161,12 +141,9 @@ export default function ResearchScreen({ pillars, sessionId, onNewSearch }) {
           recommendedSchools: currentCardNames,
         }),
       });
-
       if (!res.ok) throw new Error(`Worker error: ${res.status}`);
-
       const data = await res.json();
       const { message, card } = data;
-
       historyRef.current = [...historyRef.current, { role: "assistant", content: message }];
       setLoading(false);
       addMessage("ai", message, card || null);
@@ -191,17 +168,14 @@ export default function ResearchScreen({ pillars, sessionId, onNewSearch }) {
     await callWorker(text);
   }
 
-  // ── Share ──────────────────────────────────────────────────────────────────
   async function handleShare() {
     if (!sessionId) return;
-
     const shareUrl = `${window.location.origin}/list/${sessionId}`;
     try {
       await navigator.clipboard.writeText(shareUrl);
       setShareState("copied");
       setTimeout(() => setShareState("idle"), 2500);
     } catch {
-      // Fallback for browsers that block clipboard
       setShareState("copying");
       prompt("Copy your list link:", shareUrl);
       setTimeout(() => setShareState("idle"), 1000);
@@ -212,43 +186,30 @@ export default function ResearchScreen({ pillars, sessionId, onNewSearch }) {
 
   return (
     <div style={s.page}>
-      {/* HEADER */}
       <div style={s.header}>
         <div style={s.logo}>
           <div style={s.logoIcon}>🗺️</div>
           <span style={s.logoText}>College <span style={s.logoAccent}>Roadmap</span></span>
         </div>
         <div style={s.tabs}>
-          <button
-            style={activeTab === "research" ? s.tabActive : s.tab}
-            onClick={() => setActiveTab("research")}
-          >Research</button>
-          <button
-            style={activeTab === "list" ? s.tabActive : s.tab}
-            onClick={() => setActiveTab("list")}
-          >
+          <button style={activeTab === "research" ? s.tabActive : s.tab} onClick={() => setActiveTab("research")}>Research</button>
+          <button style={activeTab === "list" ? s.tabActive : s.tab} onClick={() => setActiveTab("list")}>
             My List
             {totalCards > 0 && <span style={s.badge}>{totalCards}</span>}
           </button>
         </div>
         <div style={s.headerRight}>
           {totalCards > 0 && sessionId && (
-            <button
-              style={shareState === "copied" ? s.shareBtnCopied : s.shareBtn}
-              onClick={handleShare}
-            >
+            <button style={shareState === "copied" ? s.shareBtnCopied : s.shareBtn} onClick={handleShare}>
               {shareState === "copied" ? "✓ Copied!" : "Share List"}
             </button>
           )}
           {onNewSearch && (
-            <button style={s.newBtn} onClick={onNewSearch} title="Start a new search">
-              New Search
-            </button>
+            <button style={s.newBtn} onClick={onNewSearch}>New Search</button>
           )}
         </div>
       </div>
 
-      {/* BODY */}
       <div style={s.body}>
 
         {/* CHAT */}
@@ -276,8 +237,6 @@ export default function ResearchScreen({ pillars, sessionId, onNewSearch }) {
               </div>
             )}
           </div>
-
-          {/* Input */}
           <div style={s.inputArea}>
             {totalCards > 0 && (
               <button style={s.viewListBtn} onClick={() => setActiveTab("list")}>
@@ -293,11 +252,7 @@ export default function ResearchScreen({ pillars, sessionId, onNewSearch }) {
                 placeholder="Ask about schools, adjust priorities..."
                 disabled={loading}
               />
-              <button
-                style={{ ...s.sendBtn, opacity: loading ? 0.5 : 1 }}
-                onClick={sendMsg}
-                disabled={loading}
-              >
+              <button style={{ ...s.sendBtn, opacity: loading ? 0.5 : 1 }} onClick={sendMsg} disabled={loading}>
                 &#8594;
               </button>
             </div>
@@ -309,34 +264,24 @@ export default function ResearchScreen({ pillars, sessionId, onNewSearch }) {
           <div style={s.listHeader}>
             <div style={s.listTitle}>Your College List</div>
             <div style={s.listSub}>
-              {totalCards === 0
-                ? "Schools appear here as we research"
-                : `${totalCards} school${totalCards !== 1 ? "s" : ""} found`}
+              {totalCards === 0 ? "Schools appear here as we research" : `${totalCards} school${totalCards !== 1 ? "s" : ""} found`}
             </div>
             {totalCards > 0 && sessionId && (
-              <button
-                style={shareState === "copied" ? s.shareBtnFullCopied : s.shareBtnFull}
-                onClick={handleShare}
-              >
+              <button style={shareState === "copied" ? s.shareBtnFullCopied : s.shareBtnFull} onClick={handleShare}>
                 {shareState === "copied" ? "✓ Link copied to clipboard!" : "🔗 Share this list"}
               </button>
             )}
           </div>
           <div style={s.cardsScroll}>
             {totalCards === 0 ? (
-              <div style={s.empty}>
-                📚<br /><br />
-                Start the conversation and your colleges will appear here.
-              </div>
+              <div style={s.empty}>📚<br /><br />Start the conversation and your colleges will appear here.</div>
             ) : (
               Object.entries(TIER_CONFIG).map(([tier, config]) =>
                 cards[tier] && cards[tier].length > 0 ? (
                   <div key={tier} style={s.tierSection}>
-                    <div style={{ ...s.tierBadge, ...s[config.style] }}>
-                      {config.label}
-                    </div>
+                    <div style={{ ...s.tierBadge, ...s[config.style] }}>{config.label}</div>
                     {cards[tier].map((card, i) => (
-                      <SchoolCard key={card.id || i} card={card} pillars={pillars} />
+                      <SchoolCard key={card.id || i} card={card} pillars={pillars} onRemove={handleRemoveCard} />
                     ))}
                   </div>
                 ) : null
@@ -350,11 +295,8 @@ export default function ResearchScreen({ pillars, sessionId, onNewSearch }) {
   );
 }
 
-// ─── School Card ─────────────────────────────────────────────────────────────
-function SchoolCard({ card, pillars }) {
-  const ratingColors = [
-    "#3b82f6", "#a78bfa", "#fbbf24", "#34d399", "#f87171",
-  ];
+function SchoolCard({ card, pillars, onRemove }) {
+  const ratingColors = ["#3b82f6", "#a78bfa", "#fbbf24", "#34d399", "#f87171"];
 
   return (
     <div style={sc.card}>
@@ -364,11 +306,12 @@ function SchoolCard({ card, pillars }) {
           <div style={sc.name}>{card.name}</div>
           <div style={sc.loc}>{card.location}</div>
         </div>
-        {card.lacrosse && (
-          <span style={card.laxType === "d3" ? sc.laxD3 : sc.laxClub}>
-            {card.lacrosse}
-          </span>
-        )}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
+          <button style={sc.removeBtn} onClick={() => onRemove(card)} title="Remove from list">✕</button>
+          {card.lacrosse && (
+            <span style={card.laxType === "d3" ? sc.laxD3 : sc.laxClub}>{card.lacrosse}</span>
+          )}
+        </div>
       </div>
 
       <div style={sc.statsStrip}>
@@ -396,11 +339,7 @@ function SchoolCard({ card, pillars }) {
             <div key={label} style={sc.ratingRow}>
               <span style={sc.ratingLabel}>{label}</span>
               <div style={sc.track}>
-                <div style={{
-                  ...sc.fill,
-                  width: `${val * 20}%`,
-                  background: ratingColors[i % ratingColors.length],
-                }} />
+                <div style={{ ...sc.fill, width: `${val * 20}%`, background: ratingColors[i % ratingColors.length] }} />
               </div>
               <span style={sc.score}>{val}</span>
             </div>
@@ -412,10 +351,7 @@ function SchoolCard({ card, pillars }) {
         <div style={sc.prosBlock}>
           <div style={sc.prosLabel}>✓ PROS</div>
           {card.pros.map((p, i) => (
-            <div key={i} style={sc.pcItem}>
-              <span style={sc.prosDot}>•</span>
-              <span>{p}</span>
-            </div>
+            <div key={i} style={sc.pcItem}><span style={sc.prosDot}>•</span><span>{p}</span></div>
           ))}
         </div>
       )}
@@ -424,10 +360,7 @@ function SchoolCard({ card, pillars }) {
         <div style={sc.consBlock}>
           <div style={sc.consLabel}>✗ CONS</div>
           {card.cons.map((c, i) => (
-            <div key={i} style={sc.pcItem}>
-              <span style={sc.consDot}>•</span>
-              <span>{c}</span>
-            </div>
+            <div key={i} style={sc.pcItem}><span style={sc.consDot}>•</span><span>{c}</span></div>
           ))}
         </div>
       )}
@@ -450,17 +383,13 @@ function SchoolCard({ card, pillars }) {
   );
 }
 
-// ─── Typing indicator ─────────────────────────────────────────────────────────
 function TypingDots() {
   return (
     <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
       {[0, 1, 2].map((i) => (
         <span key={i} style={{
-          width: 6, height: 6, borderRadius: "50%",
-          background: "#7d8fa8",
-          animation: "dotBounce 1.2s infinite",
-          animationDelay: `${i * 0.2}s`,
-          display: "inline-block",
+          width: 6, height: 6, borderRadius: "50%", background: "#7d8fa8",
+          animation: "dotBounce 1.2s infinite", animationDelay: `${i * 0.2}s`, display: "inline-block",
         }} />
       ))}
       <style>{`@keyframes dotBounce{0%,80%,100%{transform:scale(0.6);opacity:0.3}40%{transform:scale(1);opacity:1}}`}</style>
@@ -468,47 +397,46 @@ function TypingDots() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
 const s = {
-  page:             { minHeight: "100vh", background: "#0f1117", display: "flex", flexDirection: "column" },
-  header:           { background: "#161b26", borderBottom: "0.5px solid #2a3347", padding: "11px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, gap: 12 },
-  logo:             { display: "flex", alignItems: "center", gap: 10, flexShrink: 0 },
-  logoIcon:         { width: 26, height: 26, background: "#3b82f6", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 },
-  logoText:         { fontSize: 14, fontWeight: 500, color: "#e8edf5", letterSpacing: "-0.3px" },
-  logoAccent:       { color: "#3b82f6" },
-  tabs:             { display: "flex", flex: 1, justifyContent: "center" },
-  tab:              { fontSize: 13, padding: "8px 14px", border: "none", borderBottom: "2px solid transparent", background: "transparent", color: "#8896b0", cursor: "pointer", fontFamily: "inherit" },
-  tabActive:        { fontSize: 13, padding: "8px 14px", border: "none", borderBottom: "2px solid #3b82f6", background: "transparent", color: "#3b82f6", fontWeight: 500, cursor: "pointer", fontFamily: "inherit" },
-  badge:            { marginLeft: 6, background: "#0f1e3d", color: "#93c5fd", border: "0.5px solid #1e3a6e", borderRadius: 999, padding: "1px 7px", fontSize: 11 },
-  headerRight:      { display: "flex", alignItems: "center", gap: 8, flexShrink: 0 },
-  shareBtn:         { padding: "6px 13px", background: "#0f1e3d", border: "0.5px solid #1e3a6e", borderRadius: 7, fontSize: 12, fontWeight: 500, color: "#93c5fd", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" },
-  shareBtnCopied:   { padding: "6px 13px", background: "rgba(52,211,153,0.1)", border: "0.5px solid rgba(52,211,153,0.3)", borderRadius: 7, fontSize: 12, fontWeight: 500, color: "#34d399", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" },
-  newBtn:           { padding: "6px 13px", background: "#1c2333", border: "0.5px solid #2a3347", borderRadius: 7, fontSize: 12, color: "#8896b0", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" },
-  body:             { flex: 1, display: "flex", overflow: "hidden", minHeight: 0 },
-  left:             { flex: 1, flexDirection: "column", background: "#161b26", overflow: "hidden", minHeight: 0 },
-  right:            { flex: 1, flexDirection: "column", background: "#0f1117", overflow: "hidden", minHeight: 0 },
-  messages:         { flex: 1, overflowY: "auto", padding: "18px 16px", display: "flex", flexDirection: "column", gap: 12 },
-  msgAI:            { display: "flex", gap: 9, alignItems: "flex-start" },
-  msgUser:          { display: "flex", gap: 9, alignItems: "flex-start", flexDirection: "row-reverse" },
-  avAI:             { width: 26, height: 26, borderRadius: "50%", background: "#0f1e3d", border: "0.5px solid #1e3a6e", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0 },
-  avUser:           { width: 26, height: 26, borderRadius: "50%", background: "#222b3d", border: "0.5px solid #2a3347", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 500, color: "#8896b0", flexShrink: 0 },
-  bubAI:            { maxWidth: "85%", padding: "10px 13px", background: "#1c2333", border: "0.5px solid #2a3347", borderRadius: "2px 12px 12px 12px", fontSize: 13, lineHeight: 1.6, color: "#e8edf5" },
-  bubUser:          { maxWidth: "85%", padding: "10px 13px", background: "#0f1e3d", border: "0.5px solid #1e3a6e", borderRadius: "12px 2px 12px 12px", fontSize: 13, lineHeight: 1.6, color: "#93c5fd" },
-  cardPill:         { display: "inline-flex", alignItems: "center", gap: 6, marginTop: 8, padding: "6px 12px", background: "#0f1e3d", border: "0.5px solid #1e3a6e", borderRadius: 8, fontSize: 12, color: "#93c5fd", cursor: "pointer", width: "100%" },
-  inputArea:        { padding: "10px 14px 14px", borderTop: "0.5px solid #2a3347", background: "#161b26", flexShrink: 0 },
-  viewListBtn:      { width: "100%", padding: "10px 14px", background: "#0f1e3d", border: "0.5px solid #1e3a6e", borderRadius: 8, fontSize: 13, fontWeight: 500, color: "#93c5fd", cursor: "pointer", fontFamily: "inherit", marginBottom: 8, textAlign: "center" },
-  inputRow:         { display: "flex", gap: 8, alignItems: "center" },
-  input:            { flex: 1, background: "#1c2333", border: "0.5px solid #2a3347", borderRadius: 8, padding: "9px 13px", fontSize: 13, color: "#e8edf5", fontFamily: "inherit", outline: "none" },
-  sendBtn:          { width: 36, height: 36, borderRadius: "50%", background: "#3b82f6", border: "none", color: "#fff", fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "inherit", flexShrink: 0 },
-  listHeader:       { padding: "20px 16px 14px", background: "#0f1117", flexShrink: 0 },
-  listTitle:        { fontSize: 20, fontWeight: 500, color: "#e8edf5", letterSpacing: "-0.4px", marginBottom: 3 },
-  listSub:          { fontSize: 13, color: "#8896b0", marginBottom: 12 },
-  shareBtnFull:     { display: "block", width: "100%", padding: "10px 14px", background: "#0f1e3d", border: "0.5px solid #1e3a6e", borderRadius: 8, fontSize: 13, fontWeight: 500, color: "#93c5fd", cursor: "pointer", fontFamily: "inherit", textAlign: "center" },
+  page:               { minHeight: "100vh", background: "#0f1117", display: "flex", flexDirection: "column" },
+  header:             { background: "#161b26", borderBottom: "0.5px solid #2a3347", padding: "11px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, gap: 12 },
+  logo:               { display: "flex", alignItems: "center", gap: 10, flexShrink: 0 },
+  logoIcon:           { width: 26, height: 26, background: "#3b82f6", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 },
+  logoText:           { fontSize: 14, fontWeight: 500, color: "#e8edf5", letterSpacing: "-0.3px" },
+  logoAccent:         { color: "#3b82f6" },
+  tabs:               { display: "flex", flex: 1, justifyContent: "center" },
+  tab:                { fontSize: 13, padding: "8px 14px", border: "none", borderBottom: "2px solid transparent", background: "transparent", color: "#8896b0", cursor: "pointer", fontFamily: "inherit" },
+  tabActive:          { fontSize: 13, padding: "8px 14px", border: "none", borderBottom: "2px solid #3b82f6", background: "transparent", color: "#3b82f6", fontWeight: 500, cursor: "pointer", fontFamily: "inherit" },
+  badge:              { marginLeft: 6, background: "#0f1e3d", color: "#93c5fd", border: "0.5px solid #1e3a6e", borderRadius: 999, padding: "1px 7px", fontSize: 11 },
+  headerRight:        { display: "flex", alignItems: "center", gap: 8, flexShrink: 0 },
+  shareBtn:           { padding: "6px 13px", background: "#0f1e3d", border: "0.5px solid #1e3a6e", borderRadius: 7, fontSize: 12, fontWeight: 500, color: "#93c5fd", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" },
+  shareBtnCopied:     { padding: "6px 13px", background: "rgba(52,211,153,0.1)", border: "0.5px solid rgba(52,211,153,0.3)", borderRadius: 7, fontSize: 12, fontWeight: 500, color: "#34d399", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" },
+  newBtn:             { padding: "6px 13px", background: "#1c2333", border: "0.5px solid #2a3347", borderRadius: 7, fontSize: 12, color: "#8896b0", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" },
+  body:               { flex: 1, display: "flex", overflow: "hidden", minHeight: 0 },
+  left:               { flex: 1, flexDirection: "column", background: "#161b26", overflow: "hidden", minHeight: 0 },
+  right:              { flex: 1, flexDirection: "column", background: "#0f1117", overflow: "hidden", minHeight: 0 },
+  messages:           { flex: 1, overflowY: "auto", padding: "18px 16px", display: "flex", flexDirection: "column", gap: 12 },
+  msgAI:              { display: "flex", gap: 9, alignItems: "flex-start" },
+  msgUser:            { display: "flex", gap: 9, alignItems: "flex-start", flexDirection: "row-reverse" },
+  avAI:               { width: 26, height: 26, borderRadius: "50%", background: "#0f1e3d", border: "0.5px solid #1e3a6e", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0 },
+  avUser:             { width: 26, height: 26, borderRadius: "50%", background: "#222b3d", border: "0.5px solid #2a3347", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 500, color: "#8896b0", flexShrink: 0 },
+  bubAI:              { maxWidth: "85%", padding: "10px 13px", background: "#1c2333", border: "0.5px solid #2a3347", borderRadius: "2px 12px 12px 12px", fontSize: 13, lineHeight: 1.6, color: "#e8edf5" },
+  bubUser:            { maxWidth: "85%", padding: "10px 13px", background: "#0f1e3d", border: "0.5px solid #1e3a6e", borderRadius: "12px 2px 12px 12px", fontSize: 13, lineHeight: 1.6, color: "#93c5fd" },
+  cardPill:           { display: "inline-flex", alignItems: "center", gap: 6, marginTop: 8, padding: "6px 12px", background: "#0f1e3d", border: "0.5px solid #1e3a6e", borderRadius: 8, fontSize: 12, color: "#93c5fd", cursor: "pointer", width: "100%" },
+  inputArea:          { padding: "10px 14px 14px", borderTop: "0.5px solid #2a3347", background: "#161b26", flexShrink: 0 },
+  viewListBtn:        { width: "100%", padding: "10px 14px", background: "#0f1e3d", border: "0.5px solid #1e3a6e", borderRadius: 8, fontSize: 13, fontWeight: 500, color: "#93c5fd", cursor: "pointer", fontFamily: "inherit", marginBottom: 8, textAlign: "center" },
+  inputRow:           { display: "flex", gap: 8, alignItems: "center" },
+  input:              { flex: 1, background: "#1c2333", border: "0.5px solid #2a3347", borderRadius: 8, padding: "9px 13px", fontSize: 13, color: "#e8edf5", fontFamily: "inherit", outline: "none" },
+  sendBtn:            { width: 36, height: 36, borderRadius: "50%", background: "#3b82f6", border: "none", color: "#fff", fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "inherit", flexShrink: 0 },
+  listHeader:         { padding: "20px 16px 14px", background: "#0f1117", flexShrink: 0 },
+  listTitle:          { fontSize: 20, fontWeight: 500, color: "#e8edf5", letterSpacing: "-0.4px", marginBottom: 3 },
+  listSub:            { fontSize: 13, color: "#8896b0", marginBottom: 12 },
+  shareBtnFull:       { display: "block", width: "100%", padding: "10px 14px", background: "#0f1e3d", border: "0.5px solid #1e3a6e", borderRadius: 8, fontSize: 13, fontWeight: 500, color: "#93c5fd", cursor: "pointer", fontFamily: "inherit", textAlign: "center" },
   shareBtnFullCopied: { display: "block", width: "100%", padding: "10px 14px", background: "rgba(52,211,153,0.08)", border: "0.5px solid rgba(52,211,153,0.3)", borderRadius: 8, fontSize: 13, fontWeight: 500, color: "#34d399", cursor: "pointer", fontFamily: "inherit", textAlign: "center" },
-  cardsScroll:      { flex: 1, overflowY: "auto", padding: "4px 14px 40px" },
-  empty:            { padding: "52px 20px", textAlign: "center", fontSize: 13, color: "#8896b0", lineHeight: 1.7 },
-  tierSection:      { paddingTop: 14, marginBottom: 4 },
-  tierBadge:        { fontSize: 10, fontWeight: 500, textTransform: "uppercase", letterSpacing: 0.8, padding: "3px 9px", borderRadius: 6, display: "inline-block", marginBottom: 10 },
+  cardsScroll:        { flex: 1, overflowY: "auto", padding: "4px 14px 40px" },
+  empty:              { padding: "52px 20px", textAlign: "center", fontSize: 13, color: "#8896b0", lineHeight: 1.7 },
+  tierSection:        { paddingTop: 14, marginBottom: 4 },
+  tierBadge:          { fontSize: 10, fontWeight: 500, textTransform: "uppercase", letterSpacing: 0.8, padding: "3px 9px", borderRadius: 6, display: "inline-block", marginBottom: 10 },
   t1: { background: "rgba(59,130,246,0.12)", border: "0.5px solid #1e3a6e", color: "#93c5fd" },
   t2: { background: "rgba(167,139,250,0.12)", border: "0.5px solid rgba(167,139,250,0.3)", color: "#c4b5fd" },
   t3: { background: "rgba(245,158,11,0.1)", border: "0.5px solid rgba(245,158,11,0.25)", color: "#fcd34d" },
@@ -542,4 +470,5 @@ const sc = {
   bottomLine:   { padding: "10px 14px 12px", background: "#252d3d", fontSize: 12, color: "#7d8fa8", lineHeight: 1.6 },
   footer:       { padding: "8px 14px", background: "#1c2333", borderTop: "0.5px solid #2a3347" },
   link:         { fontSize: 11, color: "#3b82f6", textDecoration: "none", fontStyle: "italic" },
+  removeBtn:    { width: 22, height: 22, borderRadius: "50%", background: "transparent", border: "0.5px solid #3d4f6a", color: "#4a5a78", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 1, flexShrink: 0 },
 };

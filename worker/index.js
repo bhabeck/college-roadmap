@@ -76,8 +76,10 @@ RULES:
 - Never output a card without first mentioning the school conversationally.
 - Never mention any specific sport unprompted. Ask what sport they play if Athletics is a priority.
 - Keep conversational text concise — 3-5 sentences before a card.
-- Output a card when YOU proactively introduce a school OR when the student explicitly asks to add a school to their list.
-- Never output a card in response to general enthusiasm or follow-up questions that don't request adding the school.
+- Output a card in the SAME message where you first mention a school. Every new school recommendation must include its card immediately.
+- Never say "let me get you the full card" or "let me add that to your list" — just include the card right away when you mention the school.
+- Never output a card for a school mentioned in a previous message.
+- Never output a card in response to general enthusiasm or follow-up questions.
 - Vary tiers — do not put everything in tier1.
 - Stop after 5 total schools then ask if they want more or want to go deeper.`;
 
@@ -216,9 +218,9 @@ export default {
           card = parsedCard;
           card.id = crypto.randomUUID();
         }
-        messageText = rawText.replace(/\[CARD\][\s\S]*?\[\/CARD\]/, "").trim();
+        messageText = rawText.replace(/\[CARD\][\s\S]*?\[\/CARD\]/g, "").trim();
       } catch {
-        messageText = rawText.replace(/\[CARD\][\s\S]*?\[\/CARD\]/, "").trim();
+        messageText = rawText.replace(/\[CARD\][\s\S]*?\[\/CARD\]/g, "").trim();
       }
     }
 
