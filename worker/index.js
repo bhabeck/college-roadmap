@@ -127,8 +127,8 @@ export default {
       : "Not specified";
 
       const alreadyRecommended = recommendedSchools && recommendedSchools.length > 0
-      ? "\n\nSCHOOLS ALREADY RECOMMENDED — DO NOT RECOMMEND THESE AGAIN:\n" + recommendedSchools.map(s => "- " + s).join("\n")
-      : "";
+  ? "\n\nSCHOOLS ALREADY RECOMMENDED — DO NOT RECOMMEND THESE AGAIN (do not use these names or any variation of them):\n" + recommendedSchools.map(s => "- " + s).join("\n")
+  : "";
 
 const systemWithPriorities = SYSTEM_PROMPT + "\n\nSTUDENT'S RANKED PRIORITIES:\n" + priorityList + alreadyRecommended;
 
