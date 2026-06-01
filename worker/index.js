@@ -116,7 +116,7 @@ export default {
       return new Response("Invalid JSON", { status: 400 });
     }
 
-    const { messages, pillars } = body;
+    const { messages, pillars, recommendedSchools } = body;
 
     if (!messages || !Array.isArray(messages)) {
       return new Response("messages array required", { status: 400 });
@@ -126,7 +126,11 @@ export default {
       ? pillars.map((p, i) => (i + 1) + ". " + p.label + " (" + p.icon + ")").join("\n")
       : "Not specified";
 
-    const systemWithPriorities = SYSTEM_PROMPT + "\n\nSTUDENT'S RANKED PRIORITIES:\n" + priorityList;
+      const alreadyRecommended = recommendedSchools && recommendedSchools.length > 0
+      ? "\n\nSCHOOLS ALREADY RECOMMENDED — DO NOT RECOMMEND THESE AGAIN:\n" + recommendedSchools.map(s => "- " + s).join("\n")
+      : "";
+
+const systemWithPriorities = SYSTEM_PROMPT + "\n\nSTUDENT'S RANKED PRIORITIES:\n" + priorityList + alreadyRecommended;
 
     let claudeResponse;
     try {
