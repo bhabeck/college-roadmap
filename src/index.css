@@ -5,6 +5,12 @@ html, body, #root {
   -webkit-tap-highlight-color: transparent;
   box-sizing: border-box;
 }
+
+@supports (height: 100dvh) {
+  html, body, #root {
+    height: 100dvh;
+  }
+}
 :root {
   --bg: #f4f6f9;
   --bg-white: #ffffff;
