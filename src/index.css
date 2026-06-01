@@ -1,15 +1,16 @@
 html, body, #root {
   height: 100%;
 }
-* {
-  -webkit-tap-highlight-color: transparent;
-  box-sizing: border-box;
-}
 
 @supports (height: 100dvh) {
   html, body, #root {
     height: 100dvh;
   }
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
 }
 :root {
   --bg: #f4f6f9;

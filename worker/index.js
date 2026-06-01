@@ -7,9 +7,15 @@ FORMATTING: Never use markdown. No bold, no italics, no headers, no bullet point
 YOUR CONVERSATION FLOW:
 Phase 1 — Discovery (first 2 exchanges): Ask one focused question per message. Always ask about location and campus size regardless of whether the student selected them — these are required before any recommendation. Cover religion next if selected, as it narrows the list fastest. Keep questions conversational, one at a time.
 
-Phase 2 — Recommend and keep asking (starting at message 3): Start recommending schools AND continue asking about remaining priorities in the same message. Format: recommend a school conversationally, output its card, then ask your next question at the end of the message. This keeps the conversation going while the list builds.
+Phase 2 — First batch (once you have location, size, and at least 2 other priority answers): Recommend 5 schools at once. Output all 5 cards in a single message. Lead with 2-3 sentences like "Here's your first pass based on what you've told me — let's narrow it down from here." Then output all 5 cards back to back. End with one follow-up question to keep refining.
 
-Phase 3 — Keep recommending: After you have asked about all priorities, recommend 1 new school per message automatically without waiting for the student to prompt you. Stop automatically after 5 total schools and invite the student to ask follow-up questions or request more.
+Phase 3 — Refine dynamically: After the first batch, the list evolves through conversation. Add new schools with cards when better fits emerge. Demote schools that no longer fit using the [DEMOTE] tag. Never re-add a school that has been demoted unless the student explicitly asks.
+
+DEMOTING SCHOOLS:
+When a school no longer fits based on new information, output this tag:
+[DEMOTE]{"name": "Full University Name", "reason": "Doesn't have the club lacrosse program you need"}[/DEMOTE]
+
+Say something natural in your message like "Given what you've told me about needing club lacrosse, I'm moving Samford to Honorable Mentions." Then output the [DEMOTE] tag. You can demote multiple schools in one message.
 
 WHAT TO ASK ABOUT (use the student's actual ranked priorities):
 - Activities: outdoor adventure, Greek life, clubs, arts, campus events — what specifically?
@@ -22,9 +28,10 @@ WHAT TO ASK ABOUT (use the student's actual ranked priorities):
 - Location: ALWAYS ASK. Region preference, urban/rural/college town, how far from home willing to travel?
 - Campus Size: ALWAYS ASK. Small (under 5,000), medium (5,000-15,000), or large (15,000+)? Does size matter a lot or a little?
 - Cost: budget range, need-based aid eligible, merit scholarship hunter?
+- Additional criteria: if the student has shared any extra preferences or must-haves, factor those into every recommendation.
 
 SCHOOL CARDS:
-When you recommend a school, output it in this exact format at the end of your message:
+When you recommend a school, output it in this exact format:
 
 [CARD]
 {
@@ -72,16 +79,13 @@ SPORT FIELD: Only populate the lacrosse and laxType fields if the student has sp
 RULES:
 - Be specific, not generic. Real details about real schools.
 - Be honest. Real cons, not softened ones.
-- One school card per message maximum.
-- Never output a card without first mentioning the school conversationally.
-- Never mention any specific sport unprompted. Ask what sport they play if Athletics is a priority.
-- Keep conversational text concise — 3-5 sentences before a card.
+- In Phase 2, output exactly 5 cards in one message. No more, no less.
 - Output a card in the SAME message where you first mention a school. Every new school recommendation must include its card immediately.
-- Never say "let me get you the full card" or "let me add that to your list" — just include the card right away when you mention the school.
+- Never say "let me get you the full card" — just include the card right away.
 - Never output a card for a school mentioned in a previous message.
-- Never output a card in response to general enthusiasm or follow-up questions.
+- Never mention any specific sport unprompted. Ask what sport they play if Athletics is a priority.
 - Vary tiers — do not put everything in tier1.
-- Stop after 5 total schools then ask if they want more or want to go deeper.`;
+- After the first batch of 5, add new schools one at a time as the conversation refines.`;
 
 const ALLOWED_ORIGINS = [
   "https://college-roadmap.com",
@@ -99,7 +103,7 @@ function corsHeaders(origin) {
 }
 
 function normalizeName(name) {
-  return name.toLowerCase().replace(/^the\s+/, "").replace(/\s+/g, " ").trim();
+  return (name || "").toLowerCase().replace(/^the\s+/, "").replace(/\s+/g, " ").trim();
 }
 
 function extractSchoolNamesFromHistory(messages) {
@@ -139,13 +143,12 @@ export default {
       return new Response("Invalid JSON", { status: 400 });
     }
 
-    const { messages, pillars, recommendedSchools } = body;
+    const { messages, pillars, recommendedSchools, extraCriteria } = body;
 
     if (!messages || !Array.isArray(messages)) {
       return new Response("messages array required", { status: 400 });
     }
 
-    // Build complete set of already-seen schools from BOTH sources
     const seenFromHistory = extractSchoolNamesFromHistory(messages);
     const seenFromReact = new Set(
       (recommendedSchools || []).map(s => normalizeName(s))
@@ -156,17 +159,26 @@ export default {
       ? pillars.map((p, i) => (i + 1) + ". " + p.label + " (" + p.icon + ")").join("\n")
       : "Not specified";
 
+    const extraSection = extraCriteria
+      ? "\n\nSTUDENT'S ADDITIONAL CRITERIA:\n" + extraCriteria
+      : "";
+
     const alreadyRecommended = allSeenSchools.size > 0
       ? "\n\nSCHOOLS ALREADY RECOMMENDED — DO NOT OUTPUT A CARD FOR THESE:\n" +
         [...allSeenSchools].map(s => "- " + s).join("\n")
       : "";
 
-    const systemWithPriorities = SYSTEM_PROMPT + "\n\nSTUDENT'S RANKED PRIORITIES:\n" + priorityList + alreadyRecommended;
+    const systemWithPriorities = SYSTEM_PROMPT +
+      "\n\nSTUDENT'S RANKED PRIORITIES:\n" + priorityList +
+      extraSection +
+      alreadyRecommended;
 
-    // Clean [CARD] blocks from history before sending to Claude
+    // Clean [CARD] and [DEMOTE] blocks from history before sending to Claude
     const cleanedMessages = messages.map(msg => {
       if (msg.role === "assistant") {
-        const cleaned = msg.content.replace(/\[CARD\][\s\S]*?\[\/CARD\]/g, "[school card already sent]");
+        const cleaned = msg.content
+          .replace(/\[CARD\][\s\S]*?\[\/CARD\]/g, "[school card already sent]")
+          .replace(/\[DEMOTE\][\s\S]*?\[\/DEMOTE\]/g, "[demote already processed]");
         return { ...msg, content: cleaned };
       }
       return msg;
@@ -183,7 +195,7 @@ export default {
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
-          max_tokens: 1500,
+          max_tokens: 4000,
           system: systemWithPriorities,
           messages: cleanedMessages,
         }),
@@ -206,25 +218,38 @@ export default {
     const data = await claudeResponse.json();
     const rawText = data.content?.[0]?.text || "";
 
-    const cardMatch = rawText.match(/\[CARD\]([\s\S]*?)\[\/CARD\]/);
-    let card = null;
-    let messageText = rawText;
-
-    if (cardMatch) {
+    // Extract ALL cards
+    const cards = [];
+    const cardRegex = /\[CARD\]([\s\S]*?)\[\/CARD\]/g;
+    let cardMatch;
+    while ((cardMatch = cardRegex.exec(rawText)) !== null) {
       try {
-        const parsedCard = JSON.parse(cardMatch[1].trim());
-        const isDuplicate = allSeenSchools.has(normalizeName(parsedCard.name));
-        if (!isDuplicate) {
-          card = parsedCard;
-          card.id = crypto.randomUUID();
+        const parsed = JSON.parse(cardMatch[1].trim());
+        if (!allSeenSchools.has(normalizeName(parsed.name))) {
+          parsed.id = crypto.randomUUID();
+          cards.push(parsed);
         }
-        messageText = rawText.replace(/\[CARD\][\s\S]*?\[\/CARD\]/g, "").trim();
-      } catch {
-        messageText = rawText.replace(/\[CARD\][\s\S]*?\[\/CARD\]/g, "").trim();
-      }
+      } catch {}
     }
 
-    return new Response(JSON.stringify({ message: messageText, card }), {
+    // Extract ALL demotions
+    const demotions = [];
+    const demoteRegex = /\[DEMOTE\]([\s\S]*?)\[\/DEMOTE\]/g;
+    let demoteMatch;
+    while ((demoteMatch = demoteRegex.exec(rawText)) !== null) {
+      try {
+        const parsed = JSON.parse(demoteMatch[1].trim());
+        if (parsed.name) demotions.push(parsed);
+      } catch {}
+    }
+
+    // Strip all tags from message text
+    let messageText = rawText
+      .replace(/\[CARD\][\s\S]*?\[\/CARD\]/g, "")
+      .replace(/\[DEMOTE\][\s\S]*?\[\/DEMOTE\]/g, "")
+      .trim();
+
+    return new Response(JSON.stringify({ message: messageText, cards, demotions }), {
       headers: {
         "Content-Type": "application/json",
         ...corsHeaders(origin),

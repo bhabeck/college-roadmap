@@ -432,7 +432,7 @@ function TypingDots() {
 }
 
 const s = {
-  page:               { height: "100%", background: "#0f1117", display: "flex", flexDirection: "column", overflow: "hidden" },
+  page:               { height: "100dvh", background: "#0f1117", display: "flex", flexDirection: "column", overflow: "hidden" },
   header:             { background: "#161b26", borderBottom: "0.5px solid #2a3347", padding: "10px 14px", paddingTop: "max(10px, env(safe-area-inset-top))", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 },
   logo:               { display: "flex", alignItems: "center", gap: 8 },
   logoIcon:           { width: 24, height: 24, background: "#3b82f6", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 },
