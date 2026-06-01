@@ -76,8 +76,8 @@ RULES:
 - Never output a card without first mentioning the school conversationally.
 - Never mention any specific sport unprompted. Ask what sport they play if Athletics is a priority.
 - Keep conversational text concise — 3-5 sentences before a card.
-- Only output a card when YOU are proactively introducing a school for the first time.
-- Never output a card in response to student enthusiasm or follow-up questions about a school.
+- Output a card when YOU proactively introduce a school OR when the student explicitly asks to add a school to their list.
+- Never output a card in response to general enthusiasm or follow-up questions that don't request adding the school.
 - Vary tiers — do not put everything in tier1.
 - Stop after 5 total schools then ask if they want more or want to go deeper.`;
 
