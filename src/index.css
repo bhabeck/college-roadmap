@@ -1,11 +1,8 @@
 html, body, #root {
   height: 100%;
-}
-
-@supports (height: 100dvh) {
-  html, body, #root {
-    height: 100dvh;
-  }
+  position: fixed;
+  width: 100%;
+  overflow: hidden;
 }
 
 * {
