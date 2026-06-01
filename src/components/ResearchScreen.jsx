@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { supabase } from "../lib/supabase";
 
 const WORKER_URL = "https://college-roadmap-worker.it-e1f.workers.dev";
 
@@ -8,17 +9,94 @@ const TIER_CONFIG = {
   tier3: { label: "Tier 3 — Worth Knowing", style: "t3" },
 };
 
-export default function ResearchScreen({ pillars }) {
+function normalizeName(name) {
+  return (name || "").toLowerCase().replace(/^the\s+/, "").replace(/\s+/g, " ").trim();
+}
+
+// ─── Supabase sync ───────────────────────────────────────────────────────────
+// Debounced so we're not hammering the DB on every keystroke or state tick.
+function useDebouncedSync(sessionId, messages, cards, delay = 800) {
+  const timerRef = useRef(null);
+
+  const sync = useCallback(() => {
+    if (!sessionId) return;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      supabase
+        .from("sessions")
+        .update({ messages, cards })
+        .eq("id", sessionId)
+        .then(({ error }) => {
+          if (error) console.error("Supabase sync error:", error);
+        });
+    }, delay);
+  }, [sessionId, messages, cards, delay]);
+
+  // Cleanup on unmount
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+
+  return sync;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+export default function ResearchScreen({ pillars, sessionId, onNewSearch }) {
   const [activeTab, setActiveTab] = useState("research");
   const [messages, setMessages] = useState([]);
   const [cards, setCards] = useState({ tier1: [], tier2: [], tier3: [] });
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [shareState, setShareState] = useState("idle"); // idle | copying | copied
   const msgsRef = useRef(null);
-  const historyRef = useRef([]); // Claude message history
+  const historyRef = useRef([]);
   const startedRef = useRef(false);
 
+  // Sync to Supabase whenever messages or cards change
+  const syncToSupabase = useDebouncedSync(sessionId, messages, cards);
+  useEffect(() => { syncToSupabase(); }, [messages, cards]);
+
+  // Load existing session data on mount
   useEffect(() => {
+    if (!sessionId || startedRef.current) return;
+
+    supabase
+      .from("sessions")
+      .select("messages, cards, pillars")
+      .eq("id", sessionId)
+      .single()
+      .then(({ data, error }) => {
+        if (error || !data) {
+          // No existing data — start fresh
+          startedRef.current = true;
+          startConversation();
+          return;
+        }
+
+        const existingMessages = data.messages || [];
+        const existingCards = data.cards || { tier1: [], tier2: [], tier3: [] };
+
+        const hasContent =
+          existingMessages.length > 0 ||
+          Object.values(existingCards).flat().length > 0;
+
+        if (hasContent) {
+          // Resume existing session
+          historyRef.current = existingMessages
+            .filter((m) => m.role === "user" || m.role === "assistant")
+            .map((m) => ({ role: m.role, content: m.text || m.content || "" }));
+          setMessages(existingMessages);
+          setCards(existingCards);
+          startedRef.current = true;
+        } else {
+          // Session exists but is empty — start fresh
+          startedRef.current = true;
+          startConversation();
+        }
+      });
+  }, [sessionId]);
+
+  // Non-session start (fallback if Supabase unavailable)
+  useEffect(() => {
+    if (sessionId) return; // handled above
     if (startedRef.current) return;
     startedRef.current = true;
     startConversation();
@@ -28,29 +106,59 @@ export default function ResearchScreen({ pillars }) {
     if (msgsRef.current) msgsRef.current.scrollTop = msgsRef.current.scrollHeight;
   }, [messages, loading]);
 
+  // ── Dedup: single source of truth ─────────────────────────────────────────
+  // All school names already on the list, normalized. Derived from cards state.
+  function getSeenSchoolNames(currentCards) {
+    const names = new Set();
+    Object.values(currentCards).flat().forEach((c) => {
+      if (c?.name) names.add(normalizeName(c.name));
+    });
+    return names;
+  }
+
   function addMessage(role, text, card = null) {
-    setMessages((prev) => [...prev, { role, text, card }]);
+    setMessages((prevMsgs) => {
+      const newMsg = { role, text, card: card || null };
+      return [...prevMsgs, newMsg];
+    });
+
     if (card) {
-      const tier = card.tier || "tier2";
-      setCards((prev) => ({
-        ...prev,
-        [tier]: [...(prev[tier] || []), { ...card, index: Object.values(prev).flat().length }],
-      }));
+      setCards((prevCards) => {
+        // Check dedup against current cards state — this is the only check we need
+        const seen = getSeenSchoolNames(prevCards);
+        if (seen.has(normalizeName(card.name))) {
+          return prevCards; // duplicate — drop silently
+        }
+        const tier = card.tier || "tier2";
+        const allExisting = Object.values(prevCards).flat();
+        return {
+          ...prevCards,
+          [tier]: [...(prevCards[tier] || []), { ...card, index: allExisting.length }],
+        };
+      });
     }
   }
 
+  // ── Worker call ────────────────────────────────────────────────────────────
   async function callWorker(userMessage) {
-    // Add user message to history
     historyRef.current = [...historyRef.current, { role: "user", content: userMessage }];
-
     setLoading(true);
+
     try {
+      // Pull current cards for the worker's dedup list
+      const currentCardNames = [];
+      setCards((prev) => {
+        Object.values(prev).flat().forEach((c) => { if (c?.name) currentCardNames.push(c.name); });
+        return prev;
+      });
+
       const res = await fetch(WORKER_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: historyRef.current,
-          pillars: pillars,
+          pillars,
+          recommendedSchools: currentCardNames,
         }),
       });
 
@@ -59,9 +167,7 @@ export default function ResearchScreen({ pillars }) {
       const data = await res.json();
       const { message, card } = data;
 
-      // Add assistant response to history
       historyRef.current = [...historyRef.current, { role: "assistant", content: message }];
-
       setLoading(false);
       addMessage("ai", message, card || null);
     } catch (err) {
@@ -73,6 +179,7 @@ export default function ResearchScreen({ pillars }) {
   async function startConversation() {
     const priorityNames = pillars.map((p) => p.label).join(", ");
     const openingMessage = `My top priorities in order are: ${priorityNames}. I'm ready to find my college.`;
+    addMessage("user", openingMessage);
     await callWorker(openingMessage);
   }
 
@@ -82,6 +189,23 @@ export default function ResearchScreen({ pillars }) {
     setInput("");
     addMessage("user", text);
     await callWorker(text);
+  }
+
+  // ── Share ──────────────────────────────────────────────────────────────────
+  async function handleShare() {
+    if (!sessionId) return;
+
+    const shareUrl = `${window.location.origin}/list/${sessionId}`;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareState("copied");
+      setTimeout(() => setShareState("idle"), 2500);
+    } catch {
+      // Fallback for browsers that block clipboard
+      setShareState("copying");
+      prompt("Copy your list link:", shareUrl);
+      setTimeout(() => setShareState("idle"), 1000);
+    }
   }
 
   const totalCards = Object.values(cards).flat().length;
@@ -106,6 +230,21 @@ export default function ResearchScreen({ pillars }) {
             My List
             {totalCards > 0 && <span style={s.badge}>{totalCards}</span>}
           </button>
+        </div>
+        <div style={s.headerRight}>
+          {totalCards > 0 && sessionId && (
+            <button
+              style={shareState === "copied" ? s.shareBtnCopied : s.shareBtn}
+              onClick={handleShare}
+            >
+              {shareState === "copied" ? "✓ Copied!" : "Share List"}
+            </button>
+          )}
+          {onNewSearch && (
+            <button style={s.newBtn} onClick={onNewSearch} title="Start a new search">
+              New Search
+            </button>
+          )}
         </div>
       </div>
 
@@ -154,7 +293,11 @@ export default function ResearchScreen({ pillars }) {
                 placeholder="Ask about schools, adjust priorities..."
                 disabled={loading}
               />
-              <button style={{ ...s.sendBtn, opacity: loading ? 0.5 : 1 }} onClick={sendMsg} disabled={loading}>
+              <button
+                style={{ ...s.sendBtn, opacity: loading ? 0.5 : 1 }}
+                onClick={sendMsg}
+                disabled={loading}
+              >
                 &#8594;
               </button>
             </div>
@@ -170,6 +313,14 @@ export default function ResearchScreen({ pillars }) {
                 ? "Schools appear here as we research"
                 : `${totalCards} school${totalCards !== 1 ? "s" : ""} found`}
             </div>
+            {totalCards > 0 && sessionId && (
+              <button
+                style={shareState === "copied" ? s.shareBtnFullCopied : s.shareBtnFull}
+                onClick={handleShare}
+              >
+                {shareState === "copied" ? "✓ Link copied to clipboard!" : "🔗 Share this list"}
+              </button>
+            )}
           </div>
           <div style={s.cardsScroll}>
             {totalCards === 0 ? (
@@ -185,7 +336,7 @@ export default function ResearchScreen({ pillars }) {
                       {config.label}
                     </div>
                     {cards[tier].map((card, i) => (
-                      <SchoolCard key={i} card={card} pillars={pillars} />
+                      <SchoolCard key={card.id || i} card={card} pillars={pillars} />
                     ))}
                   </div>
                 ) : null
@@ -199,12 +350,11 @@ export default function ResearchScreen({ pillars }) {
   );
 }
 
+// ─── School Card ─────────────────────────────────────────────────────────────
 function SchoolCard({ card, pillars }) {
   const ratingColors = [
     "#3b82f6", "#a78bfa", "#fbbf24", "#34d399", "#f87171",
   ];
-
-  const ratingLabels = pillars ? pillars.map((p) => p.label) : Object.keys(card.ratings || {});
 
   return (
     <div style={sc.card}>
@@ -300,6 +450,7 @@ function SchoolCard({ card, pillars }) {
   );
 }
 
+// ─── Typing indicator ─────────────────────────────────────────────────────────
 function TypingDots() {
   return (
     <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
@@ -317,40 +468,47 @@ function TypingDots() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const s = {
-  page:        { minHeight: "100vh", background: "#0f1117", display: "flex", flexDirection: "column" },
-  header:      { background: "#161b26", borderBottom: "0.5px solid #2a3347", padding: "11px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 },
-  logo:        { display: "flex", alignItems: "center", gap: 10 },
-  logoIcon:    { width: 26, height: 26, background: "#3b82f6", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 },
-  logoText:    { fontSize: 14, fontWeight: 500, color: "#e8edf5", letterSpacing: "-0.3px" },
-  logoAccent:  { color: "#3b82f6" },
-  tabs:        { display: "flex" },
-  tab:         { fontSize: 13, padding: "8px 14px", border: "none", borderBottom: "2px solid transparent", background: "transparent", color: "#8896b0", cursor: "pointer", fontFamily: "inherit" },
-  tabActive:   { fontSize: 13, padding: "8px 14px", border: "none", borderBottom: "2px solid #3b82f6", background: "transparent", color: "#3b82f6", fontWeight: 500, cursor: "pointer", fontFamily: "inherit" },
-  badge:       { marginLeft: 6, background: "#0f1e3d", color: "#93c5fd", border: "0.5px solid #1e3a6e", borderRadius: 999, padding: "1px 7px", fontSize: 11 },
-  body:        { flex: 1, display: "flex", overflow: "hidden", minHeight: 0 },
-  left:        { flex: 1, flexDirection: "column", background: "#161b26", overflow: "hidden", minHeight: 0 },
-  right:       { flex: 1, flexDirection: "column", background: "#0f1117", overflow: "hidden", minHeight: 0 },
-  messages:    { flex: 1, overflowY: "auto", padding: "18px 16px", display: "flex", flexDirection: "column", gap: 12 },
-  msgAI:       { display: "flex", gap: 9, alignItems: "flex-start" },
-  msgUser:     { display: "flex", gap: 9, alignItems: "flex-start", flexDirection: "row-reverse" },
-  avAI:        { width: 26, height: 26, borderRadius: "50%", background: "#0f1e3d", border: "0.5px solid #1e3a6e", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0 },
-  avUser:      { width: 26, height: 26, borderRadius: "50%", background: "#222b3d", border: "0.5px solid #2a3347", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 500, color: "#8896b0", flexShrink: 0 },
-  bubAI:       { maxWidth: "85%", padding: "10px 13px", background: "#1c2333", border: "0.5px solid #2a3347", borderRadius: "2px 12px 12px 12px", fontSize: 13, lineHeight: 1.6, color: "#e8edf5" },
-  bubUser:     { maxWidth: "85%", padding: "10px 13px", background: "#0f1e3d", border: "0.5px solid #1e3a6e", borderRadius: "12px 2px 12px 12px", fontSize: 13, lineHeight: 1.6, color: "#93c5fd" },
-  cardPill:    { display: "inline-flex", alignItems: "center", gap: 6, marginTop: 8, padding: "6px 12px", background: "#0f1e3d", border: "0.5px solid #1e3a6e", borderRadius: 8, fontSize: 12, color: "#93c5fd", cursor: "pointer", width: "100%" },
-  inputArea:   { padding: "10px 14px 14px", borderTop: "0.5px solid #2a3347", background: "#161b26", flexShrink: 0 },
-  viewListBtn: { width: "100%", padding: "10px 14px", background: "#0f1e3d", border: "0.5px solid #1e3a6e", borderRadius: 8, fontSize: 13, fontWeight: 500, color: "#93c5fd", cursor: "pointer", fontFamily: "inherit", marginBottom: 8, textAlign: "center" },
-  inputRow:    { display: "flex", gap: 8, alignItems: "center" },
-  input:       { flex: 1, background: "#1c2333", border: "0.5px solid #2a3347", borderRadius: 8, padding: "9px 13px", fontSize: 13, color: "#e8edf5", fontFamily: "inherit", outline: "none" },
-  sendBtn:     { width: 36, height: 36, borderRadius: "50%", background: "#3b82f6", border: "none", color: "#fff", fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "inherit", flexShrink: 0 },
-  listHeader:  { padding: "20px 16px 10px", background: "#0f1117", flexShrink: 0 },
-  listTitle:   { fontSize: 20, fontWeight: 500, color: "#e8edf5", letterSpacing: "-0.4px", marginBottom: 3 },
-  listSub:     { fontSize: 13, color: "#8896b0" },
-  cardsScroll: { flex: 1, overflowY: "auto", padding: "4px 14px 40px" },
-  empty:       { padding: "52px 20px", textAlign: "center", fontSize: 13, color: "#8896b0", lineHeight: 1.7 },
-  tierSection: { paddingTop: 14, marginBottom: 4 },
-  tierBadge:   { fontSize: 10, fontWeight: 500, textTransform: "uppercase", letterSpacing: 0.8, padding: "3px 9px", borderRadius: 6, display: "inline-block", marginBottom: 10 },
+  page:             { minHeight: "100vh", background: "#0f1117", display: "flex", flexDirection: "column" },
+  header:           { background: "#161b26", borderBottom: "0.5px solid #2a3347", padding: "11px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, gap: 12 },
+  logo:             { display: "flex", alignItems: "center", gap: 10, flexShrink: 0 },
+  logoIcon:         { width: 26, height: 26, background: "#3b82f6", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 },
+  logoText:         { fontSize: 14, fontWeight: 500, color: "#e8edf5", letterSpacing: "-0.3px" },
+  logoAccent:       { color: "#3b82f6" },
+  tabs:             { display: "flex", flex: 1, justifyContent: "center" },
+  tab:              { fontSize: 13, padding: "8px 14px", border: "none", borderBottom: "2px solid transparent", background: "transparent", color: "#8896b0", cursor: "pointer", fontFamily: "inherit" },
+  tabActive:        { fontSize: 13, padding: "8px 14px", border: "none", borderBottom: "2px solid #3b82f6", background: "transparent", color: "#3b82f6", fontWeight: 500, cursor: "pointer", fontFamily: "inherit" },
+  badge:            { marginLeft: 6, background: "#0f1e3d", color: "#93c5fd", border: "0.5px solid #1e3a6e", borderRadius: 999, padding: "1px 7px", fontSize: 11 },
+  headerRight:      { display: "flex", alignItems: "center", gap: 8, flexShrink: 0 },
+  shareBtn:         { padding: "6px 13px", background: "#0f1e3d", border: "0.5px solid #1e3a6e", borderRadius: 7, fontSize: 12, fontWeight: 500, color: "#93c5fd", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" },
+  shareBtnCopied:   { padding: "6px 13px", background: "rgba(52,211,153,0.1)", border: "0.5px solid rgba(52,211,153,0.3)", borderRadius: 7, fontSize: 12, fontWeight: 500, color: "#34d399", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" },
+  newBtn:           { padding: "6px 13px", background: "#1c2333", border: "0.5px solid #2a3347", borderRadius: 7, fontSize: 12, color: "#8896b0", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" },
+  body:             { flex: 1, display: "flex", overflow: "hidden", minHeight: 0 },
+  left:             { flex: 1, flexDirection: "column", background: "#161b26", overflow: "hidden", minHeight: 0 },
+  right:            { flex: 1, flexDirection: "column", background: "#0f1117", overflow: "hidden", minHeight: 0 },
+  messages:         { flex: 1, overflowY: "auto", padding: "18px 16px", display: "flex", flexDirection: "column", gap: 12 },
+  msgAI:            { display: "flex", gap: 9, alignItems: "flex-start" },
+  msgUser:          { display: "flex", gap: 9, alignItems: "flex-start", flexDirection: "row-reverse" },
+  avAI:             { width: 26, height: 26, borderRadius: "50%", background: "#0f1e3d", border: "0.5px solid #1e3a6e", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0 },
+  avUser:           { width: 26, height: 26, borderRadius: "50%", background: "#222b3d", border: "0.5px solid #2a3347", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 500, color: "#8896b0", flexShrink: 0 },
+  bubAI:            { maxWidth: "85%", padding: "10px 13px", background: "#1c2333", border: "0.5px solid #2a3347", borderRadius: "2px 12px 12px 12px", fontSize: 13, lineHeight: 1.6, color: "#e8edf5" },
+  bubUser:          { maxWidth: "85%", padding: "10px 13px", background: "#0f1e3d", border: "0.5px solid #1e3a6e", borderRadius: "12px 2px 12px 12px", fontSize: 13, lineHeight: 1.6, color: "#93c5fd" },
+  cardPill:         { display: "inline-flex", alignItems: "center", gap: 6, marginTop: 8, padding: "6px 12px", background: "#0f1e3d", border: "0.5px solid #1e3a6e", borderRadius: 8, fontSize: 12, color: "#93c5fd", cursor: "pointer", width: "100%" },
+  inputArea:        { padding: "10px 14px 14px", borderTop: "0.5px solid #2a3347", background: "#161b26", flexShrink: 0 },
+  viewListBtn:      { width: "100%", padding: "10px 14px", background: "#0f1e3d", border: "0.5px solid #1e3a6e", borderRadius: 8, fontSize: 13, fontWeight: 500, color: "#93c5fd", cursor: "pointer", fontFamily: "inherit", marginBottom: 8, textAlign: "center" },
+  inputRow:         { display: "flex", gap: 8, alignItems: "center" },
+  input:            { flex: 1, background: "#1c2333", border: "0.5px solid #2a3347", borderRadius: 8, padding: "9px 13px", fontSize: 13, color: "#e8edf5", fontFamily: "inherit", outline: "none" },
+  sendBtn:          { width: 36, height: 36, borderRadius: "50%", background: "#3b82f6", border: "none", color: "#fff", fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "inherit", flexShrink: 0 },
+  listHeader:       { padding: "20px 16px 14px", background: "#0f1117", flexShrink: 0 },
+  listTitle:        { fontSize: 20, fontWeight: 500, color: "#e8edf5", letterSpacing: "-0.4px", marginBottom: 3 },
+  listSub:          { fontSize: 13, color: "#8896b0", marginBottom: 12 },
+  shareBtnFull:     { display: "block", width: "100%", padding: "10px 14px", background: "#0f1e3d", border: "0.5px solid #1e3a6e", borderRadius: 8, fontSize: 13, fontWeight: 500, color: "#93c5fd", cursor: "pointer", fontFamily: "inherit", textAlign: "center" },
+  shareBtnFullCopied: { display: "block", width: "100%", padding: "10px 14px", background: "rgba(52,211,153,0.08)", border: "0.5px solid rgba(52,211,153,0.3)", borderRadius: 8, fontSize: 13, fontWeight: 500, color: "#34d399", cursor: "pointer", fontFamily: "inherit", textAlign: "center" },
+  cardsScroll:      { flex: 1, overflowY: "auto", padding: "4px 14px 40px" },
+  empty:            { padding: "52px 20px", textAlign: "center", fontSize: 13, color: "#8896b0", lineHeight: 1.7 },
+  tierSection:      { paddingTop: 14, marginBottom: 4 },
+  tierBadge:        { fontSize: 10, fontWeight: 500, textTransform: "uppercase", letterSpacing: 0.8, padding: "3px 9px", borderRadius: 6, display: "inline-block", marginBottom: 10 },
   t1: { background: "rgba(59,130,246,0.12)", border: "0.5px solid #1e3a6e", color: "#93c5fd" },
   t2: { background: "rgba(167,139,250,0.12)", border: "0.5px solid rgba(167,139,250,0.3)", color: "#c4b5fd" },
   t3: { background: "rgba(245,158,11,0.1)", border: "0.5px solid rgba(245,158,11,0.25)", color: "#fcd34d" },

@@ -9,7 +9,7 @@ Phase 1 — Discovery (first 2 exchanges): Ask one focused question per message.
 
 Phase 2 — Recommend and keep asking (starting at message 3): Start recommending schools AND continue asking about remaining priorities in the same message. Format: recommend a school conversationally, output its card, then ask your next question at the end of the message. This keeps the conversation going while the list builds.
 
-Phase 3 — Keep recommending: After you have asked about all priorities, recommend 1 new school per message automatically without waiting for the student to prompt you. Stop automatically after 5 total schools and invite the student to ask follow-up questions or request more. Never recommend the same school twice in a conversation.
+Phase 3 — Keep recommending: After you have asked about all priorities, recommend 1 new school per message automatically without waiting for the student to prompt you. Stop automatically after 5 total schools and invite the student to ask follow-up questions or request more.
 
 WHAT TO ASK ABOUT (use the student's actual ranked priorities):
 - Activities: outdoor adventure, Greek life, clubs, arts, campus events — what specifically?
@@ -24,7 +24,7 @@ WHAT TO ASK ABOUT (use the student's actual ranked priorities):
 - Cost: budget range, need-based aid eligible, merit scholarship hunter?
 
 SCHOOL CARDS:
-When you recommend a school, output it in this exact format at the end of your message, after any follow-up question:
+When you recommend a school, output it in this exact format at the end of your message:
 
 [CARD]
 {
@@ -74,13 +74,12 @@ RULES:
 - Be honest. Real cons, not softened ones.
 - One school card per message maximum.
 - Never output a card without first mentioning the school conversationally.
-- Never mention lacrosse or any specific sport unprompted. If Athletics is a selected priority, ask what sport they play and at what level. Only reference a specific sport after the student tells you.
+- Never mention any specific sport unprompted. Ask what sport they play if Athletics is a priority.
 - Keep conversational text concise — 3-5 sentences before a card.
-- After recommending a school, always end your message with one more question about an uncovered priority, until all priorities are covered.
-- Once all priorities are covered, recommend schools automatically without waiting.
-- Vary tiers across recommendations — do not put everything in tier1.
-- Never recommend the same school twice in a single conversation. Before recommending a school, mentally check every school you have already mentioned in this conversation and pick a different one.
-- Stop recommending automatically after 5 total schools. Then say something like: That is a solid starting list — want me to go deeper on any of these, or should I look for more options?`;
+- Only output a card when YOU are proactively introducing a school for the first time.
+- Never output a card in response to student enthusiasm or follow-up questions about a school.
+- Vary tiers — do not put everything in tier1.
+- Stop after 5 total schools then ask if they want more or want to go deeper.`;
 
 const ALLOWED_ORIGINS = [
   "https://college-roadmap.com",
@@ -95,6 +94,28 @@ function corsHeaders(origin) {
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
   };
+}
+
+function normalizeName(name) {
+  return name.toLowerCase().replace(/^the\s+/, "").replace(/\s+/g, " ").trim();
+}
+
+function extractSchoolNamesFromHistory(messages) {
+  const names = new Set();
+  if (!messages) return names;
+  messages.forEach(msg => {
+    if (msg.role === "assistant") {
+      const regex = /\[CARD\]([\s\S]*?)\[\/CARD\]/g;
+      let match;
+      while ((match = regex.exec(msg.content)) !== null) {
+        try {
+          const card = JSON.parse(match[1].trim());
+          if (card.name) names.add(normalizeName(card.name));
+        } catch {}
+      }
+    }
+  });
+  return names;
 }
 
 export default {
@@ -122,15 +143,32 @@ export default {
       return new Response("messages array required", { status: 400 });
     }
 
+    // Build complete set of already-seen schools from BOTH sources
+    const seenFromHistory = extractSchoolNamesFromHistory(messages);
+    const seenFromReact = new Set(
+      (recommendedSchools || []).map(s => normalizeName(s))
+    );
+    const allSeenSchools = new Set([...seenFromHistory, ...seenFromReact]);
+
     const priorityList = pillars
       ? pillars.map((p, i) => (i + 1) + ". " + p.label + " (" + p.icon + ")").join("\n")
       : "Not specified";
 
-      const alreadyRecommended = recommendedSchools && recommendedSchools.length > 0
-  ? "\n\nSCHOOLS ALREADY RECOMMENDED — DO NOT RECOMMEND THESE AGAIN (do not use these names or any variation of them):\n" + recommendedSchools.map(s => "- " + s).join("\n")
-  : "";
+    const alreadyRecommended = allSeenSchools.size > 0
+      ? "\n\nSCHOOLS ALREADY RECOMMENDED — DO NOT OUTPUT A CARD FOR THESE:\n" +
+        [...allSeenSchools].map(s => "- " + s).join("\n")
+      : "";
 
-const systemWithPriorities = SYSTEM_PROMPT + "\n\nSTUDENT'S RANKED PRIORITIES:\n" + priorityList + alreadyRecommended;
+    const systemWithPriorities = SYSTEM_PROMPT + "\n\nSTUDENT'S RANKED PRIORITIES:\n" + priorityList + alreadyRecommended;
+
+    // Clean [CARD] blocks from history before sending to Claude
+    const cleanedMessages = messages.map(msg => {
+      if (msg.role === "assistant") {
+        const cleaned = msg.content.replace(/\[CARD\][\s\S]*?\[\/CARD\]/g, "[school card already sent]");
+        return { ...msg, content: cleaned };
+      }
+      return msg;
+    });
 
     let claudeResponse;
     try {
@@ -145,7 +183,7 @@ const systemWithPriorities = SYSTEM_PROMPT + "\n\nSTUDENT'S RANKED PRIORITIES:\n
           model: "claude-sonnet-4-6",
           max_tokens: 1500,
           system: systemWithPriorities,
-          messages: messages,
+          messages: cleanedMessages,
         }),
       });
     } catch (err) {
@@ -172,8 +210,12 @@ const systemWithPriorities = SYSTEM_PROMPT + "\n\nSTUDENT'S RANKED PRIORITIES:\n
 
     if (cardMatch) {
       try {
-        card = JSON.parse(cardMatch[1].trim());
-        card.id = crypto.randomUUID();
+        const parsedCard = JSON.parse(cardMatch[1].trim());
+        const isDuplicate = allSeenSchools.has(normalizeName(parsedCard.name));
+        if (!isDuplicate) {
+          card = parsedCard;
+          card.id = crypto.randomUUID();
+        }
         messageText = rawText.replace(/\[CARD\][\s\S]*?\[\/CARD\]/, "").trim();
       } catch {
         messageText = rawText.replace(/\[CARD\][\s\S]*?\[\/CARD\]/, "").trim();
