@@ -1,8 +1,6 @@
 html, body, #root {
   height: 100%;
-  overflow: hidden;
 }
-
 * {
   -webkit-tap-highlight-color: transparent;
   box-sizing: border-box;
