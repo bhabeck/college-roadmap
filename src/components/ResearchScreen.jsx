@@ -1,183 +1,87 @@
 import { useState, useRef, useEffect } from "react";
 
-const TIER_CONFIG = {
-  tier1: { label: "Tier 1 — Best Fits",    style: "t1" },
-  tier2: { label: "Tier 2 — Strong Pick",  style: "t2" },
-  tier3: { label: "Tier 3 — Worth Knowing",style: "t3" },
-};
+const WORKER_URL = "https://college-roadmap-worker.it-e1f.workers.dev";
 
-const DEMO_FLOW = [
-  { delay: 700,  role: "ai",   text: "Your top priorities are Activities, Religion, Athletics, and Academics — solid profile. Quick question: when you say activities, are you thinking mountains and hiking, or beach and surf?" },
-  { delay: 200,  role: "user", text: "Mountains. Hiking, camping, skiing." },
-  { delay: 1100, role: "ai",   text: "Got it. For religion — institutional affiliation, or would strong campus ministry like Cru or RUF work?" },
-  { delay: 200,  role: "user", text: "Ideally institutional, but strong campus ministry at a bigger school works too." },
-  { delay: 1100, role: "ai",   text: "And the sport?" },
-  { delay: 200,  role: "user", text: "Lacrosse — D3 varsity ideally, club is fine." },
-  {
-    delay: 1400, role: "ai",
-    text: "Here's where I'd start. Grand Canyon University has the strongest institutional Christian culture I'd recommend. Their club lacrosse program won two national championships. And their outdoor rec calendar includes the Grand Canyon, Sedona, and Flagstaff skiing.",
-    card: {
-      name: "Grand Canyon University",
-      location: "Phoenix, AZ · Sonoran Desert",
-      lacrosse: "Club MCLA — 2x Nat'l Champs",
-      laxType: "club",
-      net: "~$22K/yr",
-      size: "~25,000",
-      enrollment: "~25,000",
-      acceptance: "79%",
-      drive: "Flight",
-      website: "gcu.edu",
-      index: 0,
-      ratings: { Activities: 4, Religion: 5, Athletics: 4, Academics: 3 },
-      pros: [
-        "Strongest institutional Christian culture on the list",
-        "2x MCLA National Champions — elite club lacrosse",
-        "Organized outdoor rec: Grand Canyon, Sedona, Flagstaff skiing",
-        "Most affordable private Christian school (~$22K net)",
-      ],
-      cons: [
-        "25,000 students — very large campus feel",
-        "Phoenix is flat — outdoor culture requires leaving campus",
-        "Club lacrosse only — no varsity pathway",
-        "Flight required from Atlanta",
-      ],
-      bottomLine: "Strongest Christian culture and elite club lacrosse. The organized outdoor rec program means you actually get to the Grand Canyon and Sedona regularly. Size is the main trade-off.",
-      tier: "tier1",
-    },
-  },
-  {
-    delay: 400, role: "ai",
-    text: "Appalachian State is the other top pick — best raw outdoor setting close to home. Boone at 3,300 feet. Cru, RUF, and Campus Christian Fellowship all active on campus.",
-    card: {
-      name: "Appalachian State",
-      location: "Boone, NC · Blue Ridge at 3,300 ft",
-      lacrosse: "Club MCLA est. 1970s",
-      laxType: "club",
-      net: "~$43K OOS",
-      size: "~19,000",
-      enrollment: "~19,000",
-      acceptance: "90%",
-      drive: "~2.5 hrs ✓",
-      website: "appstate.edu",
-      index: 1,
-      ratings: { Activities: 5, Religion: 3, Athletics: 3, Academics: 3 },
-      pros: [
-        "Best mountain outdoor setting close to home — Boone at 3,300 ft",
-        "Cru, RUF, and Campus Christian Fellowship all active on campus",
-        "Established club lacrosse since the 1970s",
-        "Only 2.5 hours from Atlanta — easy visits",
-      ],
-      cons: [
-        "No institutional Christian identity — public university, faith is self-driven",
-        "19,000 students — large campus, easy to get lost",
-        "Club lacrosse only — no varsity pathway or scholarship",
-        "Out-of-state cost (~$43K) comparable to private schools",
-      ],
-      bottomLine: "Best mountain outdoor setting close to home. Christian ministry scene is genuinely robust even without institutional identity — Cru and RUF are both active. Size and public school feel are the real trade-offs.",
-      tier: "tier1",
-    },
-  },
-  {
-    delay: 400, role: "ai",
-    text: "And for lacrosse — University of Lynchburg has the best D3 program of any Christian school I've found. 2015 national runner-up, players from Alpharetta and Roswell on the roster.",
-    card: {
-      name: "University of Lynchburg",
-      location: "Lynchburg, VA · Blue Ridge Mountains",
-      lacrosse: "D3 Varsity — Best Program ★",
-      laxType: "d3",
-      net: "~$23K/yr",
-      size: "~1,800",
-      enrollment: "~1,800",
-      acceptance: "82%",
-      drive: "~6 hrs",
-      website: "lynchburg.edu",
-      index: 2,
-      ratings: { Activities: 4, Religion: 4, Athletics: 5, Academics: 3 },
-      pros: [
-        "Best D3 lacrosse program on the list — 2015 national runner-up",
-        "Players from Alpharetta and Roswell already on the roster",
-        "Most affordable private school on the list (~$23K net)",
-        "Blue Ridge Mountains setting with real outdoor access",
-      ],
-      cons: [
-        "6-hour drive from Atlanta — harder to visit, far from home",
-        "Christian culture solid but not as intentional as GCU",
-        "Lynchburg itself is a smaller city — less energy than Boone",
-        "Academics rated lower than some peers on the list",
-      ],
-      bottomLine: "Best lacrosse program on the list by a wide margin. Blue Ridge setting, most affordable net price, and players from Alpharetta already on the roster make this an easy first outreach.",
-      tier: "tier2",
-    },
-  },
-];
+const TIER_CONFIG = {
+  tier1: { label: "Tier 1 — Best Fits",     style: "t1" },
+  tier2: { label: "Tier 2 — Strong Pick",   style: "t2" },
+  tier3: { label: "Tier 3 — Worth Knowing", style: "t3" },
+};
 
 export default function ResearchScreen({ pillars }) {
   const [activeTab, setActiveTab] = useState("research");
   const [messages, setMessages] = useState([]);
   const [cards, setCards] = useState({ tier1: [], tier2: [], tier3: [] });
   const [input, setInput] = useState("");
-  const [typing, setTyping] = useState(false);
+  const [loading, setLoading] = useState(false);
   const msgsRef = useRef(null);
-  const demoRef = useRef(0);
-  const demoStarted = useRef(false);
+  const historyRef = useRef([]); // Claude message history
+  const startedRef = useRef(false);
 
   useEffect(() => {
-    if (demoStarted.current) return;
-    demoStarted.current = true;
-    const pillarNames = pillars.slice(0, 3).map((p) => p.label).join(", ");
-    setTimeout(() => {
-      addMessage("ai", `Perfect — your top priorities are ${pillarNames}${pillars.length > 3 ? `, and ${pillars[3].label}` : ""}. Let me ask a couple quick questions to focus the search.`);
-      runDemo();
-    }, 600);
+    if (startedRef.current) return;
+    startedRef.current = true;
+    startConversation();
   }, []);
 
   useEffect(() => {
     if (msgsRef.current) msgsRef.current.scrollTop = msgsRef.current.scrollHeight;
-  }, [messages, typing]);
+  }, [messages, loading]);
 
   function addMessage(role, text, card = null) {
     setMessages((prev) => [...prev, { role, text, card }]);
     if (card) {
+      const tier = card.tier || "tier2";
       setCards((prev) => ({
         ...prev,
-        [card.tier]: [...prev[card.tier], card],
+        [tier]: [...(prev[tier] || []), { ...card, index: Object.values(prev).flat().length }],
       }));
     }
   }
 
-  function runDemo() {
-    const flow = DEMO_FLOW;
-    function next() {
-      const i = demoRef.current;
-      if (i >= flow.length) return;
-      demoRef.current++;
-      const step = flow[i];
-      if (step.role === "ai") {
-        setTyping(true);
-        setTimeout(() => {
-          setTyping(false);
-          addMessage("ai", step.text, step.card || null);
-          if (demoRef.current < flow.length) setTimeout(next, flow[demoRef.current].delay);
-        }, step.delay);
-      } else {
-        setTimeout(() => {
-          addMessage("user", step.text);
-          if (demoRef.current < flow.length) setTimeout(next, flow[demoRef.current].delay);
-        }, step.delay);
-      }
+  async function callWorker(userMessage) {
+    // Add user message to history
+    historyRef.current = [...historyRef.current, { role: "user", content: userMessage }];
+
+    setLoading(true);
+    try {
+      const res = await fetch(WORKER_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: historyRef.current,
+          pillars: pillars,
+        }),
+      });
+
+      if (!res.ok) throw new Error(`Worker error: ${res.status}`);
+
+      const data = await res.json();
+      const { message, card } = data;
+
+      // Add assistant response to history
+      historyRef.current = [...historyRef.current, { role: "assistant", content: message }];
+
+      setLoading(false);
+      addMessage("ai", message, card || null);
+    } catch (err) {
+      setLoading(false);
+      addMessage("ai", "Sorry, something went wrong reaching the AI. Try again in a moment.");
     }
-    setTimeout(next, DEMO_FLOW[0].delay);
   }
 
-  function sendMsg() {
-    if (!input.trim()) return;
-    addMessage("user", input.trim());
+  async function startConversation() {
+    const priorityNames = pillars.map((p) => p.label).join(", ");
+    const openingMessage = `My top priorities in order are: ${priorityNames}. I'm ready to find my college.`;
+    await callWorker(openingMessage);
+  }
+
+  async function sendMsg() {
+    const text = input.trim();
+    if (!text || loading) return;
     setInput("");
-    setTyping(true);
-    setTimeout(() => {
-      setTyping(false);
-      addMessage("ai", "Good question — in the live app I'd research that right now and surface new cards. Tap \"My List\" to see what we've found so far.");
-    }, 1200);
+    addMessage("user", text);
+    await callWorker(text);
   }
 
   const totalCards = Object.values(cards).flat().length;
@@ -226,7 +130,7 @@ export default function ResearchScreen({ pillars }) {
                 </div>
               </div>
             ))}
-            {typing && (
+            {loading && (
               <div style={s.msgAI}>
                 <div style={s.avAI}>🗺️</div>
                 <div style={s.bubAI}><TypingDots /></div>
@@ -234,7 +138,7 @@ export default function ResearchScreen({ pillars }) {
             )}
           </div>
 
-          {/* Input area */}
+          {/* Input */}
           <div style={s.inputArea}>
             {totalCards > 0 && (
               <button style={s.viewListBtn} onClick={() => setActiveTab("list")}>
@@ -248,8 +152,11 @@ export default function ResearchScreen({ pillars }) {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && sendMsg()}
                 placeholder="Ask about schools, adjust priorities..."
+                disabled={loading}
               />
-              <button style={s.sendBtn} onClick={sendMsg}>&#8594;</button>
+              <button style={{ ...s.sendBtn, opacity: loading ? 0.5 : 1 }} onClick={sendMsg} disabled={loading}>
+                &#8594;
+              </button>
             </div>
           </div>
         </div>
@@ -272,13 +179,13 @@ export default function ResearchScreen({ pillars }) {
               </div>
             ) : (
               Object.entries(TIER_CONFIG).map(([tier, config]) =>
-                cards[tier].length > 0 ? (
+                cards[tier] && cards[tier].length > 0 ? (
                   <div key={tier} style={s.tierSection}>
                     <div style={{ ...s.tierBadge, ...s[config.style] }}>
                       {config.label}
                     </div>
                     {cards[tier].map((card, i) => (
-                      <SchoolCard key={i} card={card} />
+                      <SchoolCard key={i} card={card} pillars={pillars} />
                     ))}
                   </div>
                 ) : null
@@ -292,66 +199,65 @@ export default function ResearchScreen({ pillars }) {
   );
 }
 
-function SchoolCard({ card }) {
-  const ratingColors = {
-    Activities: "#3b82f6",
-    Religion:   "#a78bfa",
-    Athletics:  "#fbbf24",
-    Academics:  "#34d399",
-  };
+function SchoolCard({ card, pillars }) {
+  const ratingColors = [
+    "#3b82f6", "#a78bfa", "#fbbf24", "#34d399", "#f87171",
+  ];
+
+  const ratingLabels = pillars ? pillars.map((p) => p.label) : Object.keys(card.ratings || {});
 
   return (
     <div style={sc.card}>
-      {/* Header */}
       <div style={sc.top}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={sc.num}>{String((card.index || 0) + 1).padStart(2, "0")}</div>
           <div style={sc.name}>{card.name}</div>
           <div style={sc.loc}>{card.location}</div>
         </div>
-        <span style={card.laxType === "d3" ? sc.laxD3 : sc.laxClub}>
-          {card.lacrosse}
-        </span>
+        {card.lacrosse && (
+          <span style={card.laxType === "d3" ? sc.laxD3 : sc.laxClub}>
+            {card.lacrosse}
+          </span>
+        )}
       </div>
 
-      {/* Stats strip — 2 col on mobile */}
       <div style={sc.statsStrip}>
         <div style={sc.stat}>
           <div style={sc.statLbl}>Enrollment</div>
-          <div style={sc.statVal}>{card.enrollment || card.size}</div>
+          <div style={sc.statVal}>{card.enrollment || "—"}</div>
         </div>
         <div style={{ ...sc.stat, borderRight: "none" }}>
           <div style={sc.statLbl}>Est. Net/yr</div>
-          <div style={sc.statVal}>{card.net}</div>
+          <div style={sc.statVal}>{card.net || "—"}</div>
         </div>
         <div style={sc.stat}>
           <div style={sc.statLbl}>Acceptance</div>
           <div style={sc.statVal}>{card.acceptance || "—"}</div>
         </div>
         <div style={{ ...sc.stat, borderRight: "none", borderTop: "0.5px solid #2a3347" }}>
-          <div style={sc.statLbl}>Drive from ATL</div>
+          <div style={sc.statLbl}>Drive</div>
           <div style={sc.statVal}>{card.drive || "—"}</div>
         </div>
       </div>
 
-      {/* Ratings */}
-      <div style={sc.ratingsBlock}>
-        {Object.entries(card.ratings).map(([label, val]) => (
-          <div key={label} style={sc.ratingRow}>
-            <span style={sc.ratingLabel}>{label}</span>
-            <div style={sc.track}>
-              <div style={{
-                ...sc.fill,
-                width: `${val * 20}%`,
-                background: ratingColors[label] || "#3b82f6",
-              }} />
+      {card.ratings && (
+        <div style={sc.ratingsBlock}>
+          {Object.entries(card.ratings).map(([label, val], i) => (
+            <div key={label} style={sc.ratingRow}>
+              <span style={sc.ratingLabel}>{label}</span>
+              <div style={sc.track}>
+                <div style={{
+                  ...sc.fill,
+                  width: `${val * 20}%`,
+                  background: ratingColors[i % ratingColors.length],
+                }} />
+              </div>
+              <span style={sc.score}>{val}</span>
             </div>
-            <span style={sc.score}>{val}</span>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
-      {/* Pros */}
       {card.pros && (
         <div style={sc.prosBlock}>
           <div style={sc.prosLabel}>✓ PROS</div>
@@ -364,7 +270,6 @@ function SchoolCard({ card }) {
         </div>
       )}
 
-      {/* Cons */}
       {card.cons && (
         <div style={sc.consBlock}>
           <div style={sc.consLabel}>✗ CONS</div>
@@ -377,19 +282,18 @@ function SchoolCard({ card }) {
         </div>
       )}
 
-      {/* Bottom line */}
-      <div style={sc.bottomLine}>
-        <strong style={{ color: "#e8edf5", fontWeight: 500 }}>Bottom line:</strong>{" "}
-        {card.bottomLine}
-      </div>
+      {card.bottomLine && (
+        <div style={sc.bottomLine}>
+          <strong style={{ color: "#e8edf5", fontWeight: 500 }}>Bottom line:</strong>{" "}
+          {card.bottomLine}
+        </div>
+      )}
 
-      {/* Footer */}
       {card.website && (
         <div style={sc.footer}>
-          
           <a href={`https://${card.website}`} target="_blank" rel="noreferrer" style={sc.link}>
-  {card.website}
-</a>
+            {card.website}
+          </a>
         </div>
       )}
     </div>
